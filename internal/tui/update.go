@@ -176,12 +176,7 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 
 				utils.Debug("Adding to Queue")
-
-				m.Queue.Add(cfg)
-
-				utils.Debug("Processing Queue")
-
-				go m.Queue.ProcessQueue()
+				m.Pool.Add(cfg)
 
 				return m, nil
 			}

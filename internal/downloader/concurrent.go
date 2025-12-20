@@ -170,7 +170,7 @@ func getInitialConnections(fileSize int64) int {
 	case fileSize < 1*GB:
 		return 6
 	default:
-		return 8
+		return 16
 	}
 }
 

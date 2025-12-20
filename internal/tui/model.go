@@ -52,8 +52,7 @@ type RootModel struct {
 	// Navigation
 	cursor int
 
-	// Download Queue
-	Queue *downloader.DownloadQueue
+	Pool *downloader.WorkerPool //Works as the download queue
 }
 
 // NewDownloadModel creates a new download model with progress state and reporter
@@ -90,12 +89,15 @@ func InitialRootModel() RootModel {
 	filenameInput.Width = InputWidth
 	filenameInput.Prompt = ""
 
+	// Create channel first so we can pass it to WorkerPool
+	progressChan := make(chan tea.Msg, ProgressChannelBuffer)
+
 	return RootModel{
 		downloads:    make([]*DownloadModel, 0),
 		inputs:       []textinput.Model{urlInput, pathInput, filenameInput},
 		state:        DashboardState,
-		progressChan: make(chan tea.Msg, ProgressChannelBuffer),
-		Queue:        downloader.NewDownloadQueue(),
+		progressChan: progressChan,
+		Pool:         downloader.NewWorkerPool(progressChan),
 	}
 }
 

@@ -3,142 +3,51 @@ package downloader
 import (
 	"context"
 	"surge/internal/messages"
-	"surge/internal/utils"
-	"sync"
 	"time"
+
+	tea "github.com/charmbracelet/bubbletea"
 )
 
-type DownloadStatus int
+const maxDownloads = 3 //We limit the max no of downloads to 3 at a time(XDM does this)
 
-const (
-	StatusQueued DownloadStatus = iota
-	StatusDownloading
-	StatusPaused // TODO: I have no idea how we are gonna manage this
-	StatusCompleted
-	StatusFailed
-
-	maxDownloads = 3 // TODO: Have a max active number of downloads?
-)
-
-type QueueItem struct {
-	ID      int
-	Status  DownloadStatus
-	Config  DownloadConfig
-	Context context.Context
+type WorkerPool struct {
+	taskChan   chan DownloadConfig
+	progressCh chan<- tea.Msg
 }
 
-type DownloadQueue struct {
-	Items        map[int]*QueueItem
-	QueueList    []int
-	mu           sync.Mutex
-	ProgressChan chan interface{}
-}
-
-func NewDownloadQueue() *DownloadQueue {
-	return &DownloadQueue{
-		Items:     make(map[int]*QueueItem),
-		QueueList: make([]int, 0),
+func NewWorkerPool(progressCh chan<- tea.Msg) *WorkerPool {
+	pool := &WorkerPool{
+		taskChan:   make(chan DownloadConfig, 100), //We make it buffered to avoid blocking add
+		progressCh: progressCh,
 	}
+	for i := 0; i < maxDownloads; i++ {
+		go pool.worker()
+	}
+	return pool
 }
 
-// Creates a new QueueItem and its to DownloadQueue
-func (q *DownloadQueue) Add(cfg DownloadConfig) *QueueItem {
-
-	q.mu.Lock()
-	defer q.mu.Unlock()
-
-	item := &QueueItem{
-		ID:      cfg.ID,
-		Config:  cfg,
-		Status:  StatusQueued,
-		Context: context.Background(),
-	}
-
-	q.Items[cfg.ID] = item
-	q.QueueList = append(q.QueueList, item.ID)
-
-	return item
+func (p *WorkerPool) Add(cfg DownloadConfig) {
+	p.taskChan <- cfg
 }
 
-func (q *DownloadQueue) ProcessQueue() {
+func (p *WorkerPool) worker() {
+	for cfg := range p.taskChan {
+		err := TUIDownload(context.Background(), cfg)
+		if err != nil {
+			if cfg.State != nil {
+				cfg.State.SetError(err)
+			}
+			if p.progressCh != nil {
+				p.progressCh <- messages.DownloadErrorMsg{DownloadID: cfg.ID, Err: err}
+			}
+		} else {
+			if cfg.State != nil {
+				cfg.State.Done.Store(true)
 
-	q.mu.Lock()
-	defer q.mu.Unlock()
-
-	active := 0
-	for _, item := range q.Items {
-		if item.Status == StatusDownloading {
-			active++
-		}
-	}
-
-	utils.Debug("Active Count: %v", active)
-
-	for active < maxDownloads {
-		nextID := -1
-		for _, item := range q.Items {
-			if item.Status == StatusQueued {
-				nextID = item.ID
-				break
+			}
+			if p.progressCh != nil {
+				p.progressCh <- messages.DownloadCompleteMsg{DownloadID: cfg.ID, Elapsed: time.Since(cfg.State.StartTime), Total: cfg.State.TotalSize}
 			}
 		}
-
-		if nextID == -1 {
-			break
-		}
-
-		item := q.Items[nextID]
-		item.Status = StatusDownloading
-		active++
-
-		utils.Debug("Working on %v", nextID)
-
-		go q.startDownload(item)
 	}
-}
-
-func (q *DownloadQueue) startDownload(item *QueueItem) {
-
-	err := TUIDownload(item.Context, item.Config)
-
-	q.mu.Lock()
-	defer q.mu.Unlock()
-
-	if err != nil {
-
-		item.Status = StatusFailed
-		if item.Config.State != nil {
-			item.Config.State.SetError(err)
-		}
-
-		if item.Config.ProgressCh != nil {
-			item.Config.ProgressCh <- messages.DownloadErrorMsg{DownloadID: item.ID, Err: err}
-		}
-	} else {
-
-		item.Status = StatusCompleted
-
-		if item.Config.State != nil {
-			item.Config.State.Done.Store(true)
-		}
-
-		if item.Config.ProgressCh != nil {
-			item.Config.ProgressCh <- messages.DownloadCompleteMsg{DownloadID: item.ID, Elapsed: time.Since(item.Config.State.StartTime), Total: item.Config.State.TotalSize}
-		}
-	}
-
-	// this avoids deadlock!
-	go q.ProcessQueue()
-}
-
-func (q *DownloadQueue) getStatus(id int) DownloadStatus {
-
-	q.mu.Lock()
-	defer q.mu.Unlock()
-
-	if item, ok := q.Items[id]; ok {
-		return item.Status
-	}
-
-	return StatusFailed
 }
