@@ -11,6 +11,14 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Optional
 
+try:
+    import matplotlib.pyplot as plt
+    import matplotlib.dates as mdates
+    HAS_MATPLOTLIB = True
+except ImportError:
+    HAS_MATPLOTLIB = False
+    print("⚠️  matplotlib not installed. Speed graph will be skipped.")
+
 # ==============================================================================
 # CONFIGURATION
 # ==============================================================================
@@ -232,6 +240,112 @@ def parse_log_file(filename: str) -> dict:
         'balancer_splits': balancer_splits,
         'download_info': download_info
     }
+
+
+# ==============================================================================
+# GRAPHING
+# ==============================================================================
+def generate_speed_graph(workers: dict, output_file: str = "speed_graph.png"):
+    """
+    Generate a graph of download speeds over time.
+    Shows individual task speeds as scatter points and a rolling average line.
+    """
+    if not HAS_MATPLOTLIB:
+        print("\n⚠️  Skipping graph generation (matplotlib not available).")
+        return
+    
+    # Collect all tasks with timestamps
+    all_tasks_with_time = []
+    for w in workers.values():
+        for t in w.tasks:
+            all_tasks_with_time.append({
+                'time': t.timestamp,
+                'start_time': t.start_time,
+                'speed': t.speed_mbps,
+                'worker_id': w.worker_id,
+                'size': t.length
+            })
+    
+    if not all_tasks_with_time:
+        print("\n⚠️  No task data available for graph.")
+        return
+    
+    # Sort by completion time
+    all_tasks_with_time.sort(key=lambda x: x['time'])
+    
+    # Extract data for plotting
+    times = [t['time'] for t in all_tasks_with_time]
+    speeds = [t['speed'] for t in all_tasks_with_time]
+    worker_ids = [t['worker_id'] for t in all_tasks_with_time]
+    sizes = [t['size'] for t in all_tasks_with_time]
+    
+    # Calculate rolling average (window of 10 tasks or 20% of total, whichever is smaller)
+    window_size = min(10, max(3, len(speeds) // 5))
+    rolling_avg = []
+    for i in range(len(speeds)):
+        start_idx = max(0, i - window_size + 1)
+        window = speeds[start_idx:i + 1]
+        rolling_avg.append(sum(window) / len(window))
+    
+    # Create figure with professional styling
+    fig, ax = plt.subplots(figsize=(12, 6), dpi=100)
+    fig.patch.set_facecolor('#1a1a2e')
+    ax.set_facecolor('#16213e')
+    
+    # Color map for workers
+    unique_workers = sorted(set(worker_ids))
+    colors = plt.cm.viridis([i / max(1, len(unique_workers) - 1) for i in range(len(unique_workers))])
+    color_map = {wid: colors[i] for i, wid in enumerate(unique_workers)}
+    
+    # Plot scatter points for each worker
+    for wid in unique_workers:
+        worker_times = [times[i] for i in range(len(times)) if worker_ids[i] == wid]
+        worker_speeds = [speeds[i] for i in range(len(speeds)) if worker_ids[i] == wid]
+        worker_sizes = [sizes[i] for i in range(len(sizes)) if worker_ids[i] == wid]
+        
+        # Size points by data size (normalized)
+        max_size = max(sizes) if sizes else 1
+        point_sizes = [30 + (s / max_size) * 100 for s in worker_sizes]
+        
+        ax.scatter(worker_times, worker_speeds, 
+                   c=[color_map[wid]], s=point_sizes, alpha=0.6,
+                   label=f'Worker {wid}', edgecolors='white', linewidth=0.5)
+    
+    # Plot rolling average line
+    ax.plot(times, rolling_avg, color='#ff6b6b', linewidth=2.5, 
+            label=f'Rolling Avg ({window_size} tasks)', zorder=10)
+    
+    # Add horizontal line for overall average
+    overall_avg = sum(speeds) / len(speeds) if speeds else 0
+    ax.axhline(y=overall_avg, color='#4ecdc4', linestyle='--', linewidth=1.5,
+               label=f'Overall Avg: {overall_avg:.1f} MB/s', alpha=0.8)
+    
+    # Styling
+    ax.set_xlabel('Time', fontsize=12, color='white', fontweight='bold')
+    ax.set_ylabel('Download Speed (MB/s)', fontsize=12, color='white', fontweight='bold')
+    ax.set_title('Download Speed Over Time', fontsize=14, color='white', fontweight='bold', pad=20)
+    
+    # Format x-axis
+    ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M:%S'))
+    plt.xticks(rotation=45, ha='right')
+    
+    # Grid and legend
+    ax.grid(True, alpha=0.3, color='gray', linestyle='--')
+    ax.legend(loc='upper right', facecolor='#0f3460', edgecolor='white', 
+              labelcolor='white', fontsize=9)
+    
+    # Tick colors
+    ax.tick_params(colors='white')
+    for spine in ax.spines.values():
+        spine.set_color('white')
+        spine.set_alpha(0.3)
+    
+    plt.tight_layout()
+    plt.savefig(output_file, facecolor=fig.get_facecolor(), edgecolor='none', 
+                bbox_inches='tight', dpi=150)
+    plt.close()
+    
+    print(f"\n📊 Speed graph saved to: {output_file}")
 
 
 # ==============================================================================
@@ -476,6 +590,12 @@ def analyze_and_report(data: dict):
             print(f"\n  {i}. {rec}")
     else:
         print("\n  ✅ No major optimization issues detected. Download looks healthy!")
+    
+    # ==========================================================================
+    # GENERATE SPEED GRAPH
+    # ==========================================================================
+    print_header("📊 SPEED GRAPH GENERATION")
+    generate_speed_graph(workers)
     
     print("\n" + "=" * 60)
 

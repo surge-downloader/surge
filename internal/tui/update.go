@@ -16,6 +16,30 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
 	switch msg := msg.(type) {
+	case StartDownloadMsg:
+		// Handle download request from HTTP server
+		path := msg.Path
+		if path == "" {
+			path = "."
+		}
+
+		nextID := len(m.downloads) + 1
+		newDownload := NewDownloadModel(nextID, msg.URL, "Queued", 0)
+		m.downloads = append(m.downloads, newDownload)
+
+		cfg := downloader.DownloadConfig{
+			URL:        msg.URL,
+			OutputPath: path,
+			ID:         nextID,
+			Verbose:    false,
+			ProgressCh: m.progressChan,
+			State:      newDownload.state,
+		}
+
+		utils.Debug("Adding download from server: %s", msg.URL)
+		m.Pool.Add(cfg)
+		return m, nil
+
 	case messages.DownloadStartedMsg:
 		// Find the download and update with real metadata + start polling
 		for _, d := range m.downloads {

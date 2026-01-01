@@ -18,6 +18,13 @@ const (
 	DetailState                   //DetailState is 2
 )
 
+// StartDownloadMsg is sent from the HTTP server to start a new download
+type StartDownloadMsg struct {
+	URL      string
+	Path     string
+	Filename string
+}
+
 type DownloadModel struct {
 	ID          int
 	URL         string
