@@ -141,7 +141,8 @@ func (m RootModel) View() string {
 	// Calculate dimensions - compact axis for cleaner look
 	axisWidth := 6
 	// Account for borders and margin
-	graphContentWidth := rightWidth - axisWidth - 3
+	// Account for borders (2) + axis margin (1) + right padding (2)
+	graphContentWidth := rightWidth - axisWidth - 5
 	if graphContentWidth < 10 {
 		graphContentWidth = 10
 	}
@@ -153,8 +154,14 @@ func (m RootModel) View() string {
 			maxSpeed = v
 		}
 	}
-	// Add a little headroom (10%) so the graph doesn't always hit the ceiling
+	// Add headroom and round to nearest 5 for cleaner labels
 	maxSpeed = maxSpeed * 1.1
+	// Round up to nearest 5 (or nearest 1 if below 5)
+	if maxSpeed >= 5 {
+		maxSpeed = float64(int((maxSpeed+4.99)/5) * 5)
+	} else if maxSpeed >= 1 {
+		maxSpeed = float64(int(maxSpeed + 0.99))
+	}
 
 	// Calculate Available Height for the Graph
 	// graphHeight - Borders (2) - Title/Spacer lines (2)
@@ -170,8 +177,8 @@ func (m RootModel) View() string {
 	// Create the Axis (Left side) - compact labels
 	axisStyle := lipgloss.NewStyle().Width(axisWidth).Foreground(ColorGray).Align(lipgloss.Right)
 
-	// Create Axis Labels - compact format without "MB/s" suffix
-	labelTop := axisStyle.Render(fmt.Sprintf("%.1f", maxSpeed))
+	// Create Axis Labels - whole numbers for cleaner look
+	labelTop := axisStyle.Render(fmt.Sprintf("%.0f", maxSpeed))
 	labelMid := axisStyle.Render(fmt.Sprintf("%.1f", maxSpeed/2))
 	labelBot := axisStyle.Render("0")
 
