@@ -16,10 +16,12 @@ import (
 type UIState int //Defines UIState as int to be used in rootModel
 
 const (
-	DashboardState  UIState = iota //DashboardState is 0 increments after each line
-	InputState                     //InputState is 1
-	DetailState                    //DetailState is 2
-	FilePickerState                //FilePickerState is 3
+	DashboardState        UIState = iota //DashboardState is 0 increments after each line
+	InputState                           //InputState is 1
+	DetailState                          //DetailState is 2
+	FilePickerState                      //FilePickerState is 3
+	HistoryState                         //HistoryState is 4
+	DuplicateWarningState                //DuplicateWarningState is 5
 )
 
 // StartDownloadMsg is sent from the HTTP server to start a new download
@@ -71,6 +73,16 @@ type RootModel struct {
 
 	Pool *downloader.WorkerPool //Works as the download queue
 	PWD  string
+
+	// History view
+	historyEntries []downloader.DownloadEntry
+	historyCursor  int
+
+	// Duplicate detection
+	pendingURL      string // URL pending confirmation
+	pendingPath     string // Path pending confirmation
+	pendingFilename string // Filename pending confirmation
+	duplicateInfo   string // Info about the duplicate
 }
 
 // NewDownloadModel creates a new download model with progress state and reporter

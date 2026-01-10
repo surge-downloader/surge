@@ -18,5 +18,5 @@ func ConvertBytesToHumanReadable(bytes int64) string {
 
 	exp := int64(math.Log(float64(bytes)) / math.Log(unit))
 	pre := "KMGTPE"[exp-1]
-	return fmt.Sprintf("%.2f %cB", float64(bytes)/math.Pow(unit, float64(exp)), pre)
+	return fmt.Sprintf("%.1f %cB", float64(bytes)/math.Pow(unit, float64(exp)), pre)
 }

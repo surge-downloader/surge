@@ -25,6 +25,18 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			path = "."
 		}
 
+		// Check for duplicate URL in active downloads
+		for _, d := range m.downloads {
+			if d.URL == msg.URL {
+				m.pendingURL = msg.URL
+				m.pendingPath = path
+				m.pendingFilename = msg.Filename
+				m.duplicateInfo = d.Filename
+				m.state = DuplicateWarningState
+				return m, nil
+			}
+		}
+
 		nextID := m.NextDownloadID
 		m.NextDownloadID++
 		newDownload := NewDownloadModel(nextID, msg.URL, "Queued", 0)
@@ -95,6 +107,18 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				d.done = true
 				// Set progress to 100%
 				cmds = append(cmds, d.progress.SetPercent(1.0))
+
+				// Persist to history (TUI has the correct filename from DownloadStartedMsg)
+				_ = downloader.AddToMasterList(downloader.DownloadEntry{
+					URLHash:     downloader.URLHash(d.URL),
+					URL:         d.URL,
+					DestPath:    "", // Not tracked in TUI model
+					Filename:    d.Filename,
+					Status:      "completed",
+					TotalSize:   d.Total,
+					CompletedAt: time.Now().Unix(),
+				})
+
 				break
 			}
 		}
@@ -170,6 +194,15 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.inputs[1].Blur()
 				m.inputs[2].SetValue("")
 				m.inputs[2].Blur()
+				return m, nil
+			}
+			if msg.String() == "h" {
+				// Open history view
+				if entries, err := downloader.LoadCompletedDownloads(); err == nil {
+					m.historyEntries = entries
+					m.historyCursor = 0
+					m.state = HistoryState
+				}
 				return m, nil
 			}
 
@@ -294,7 +327,20 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if path == "" {
 					path = "."
 				}
-				// filename := m.inputs[2].Value() // Will use later
+				filename := m.inputs[2].Value()
+
+				// Check for duplicate URL in active downloads
+				for _, d := range m.downloads {
+					if d.URL == url {
+						m.pendingURL = url
+						m.pendingPath = path
+						m.pendingFilename = filename
+						m.duplicateInfo = d.Filename
+						m.state = DuplicateWarningState
+						return m, nil
+					}
+				}
+
 				m.state = DashboardState
 
 				// Create download with state and reporter
@@ -371,6 +417,81 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 			return m, cmd
+
+		case HistoryState:
+			if msg.String() == "esc" || msg.String() == "q" {
+				m.state = DashboardState
+				return m, nil
+			}
+			if msg.String() == "up" || msg.String() == "k" {
+				if m.historyCursor > 0 {
+					m.historyCursor--
+				}
+				return m, nil
+			}
+			if msg.String() == "down" || msg.String() == "j" {
+				if m.historyCursor < len(m.historyEntries)-1 {
+					m.historyCursor++
+				}
+				return m, nil
+			}
+			if msg.String() == "d" || msg.String() == "x" {
+				if m.historyCursor >= 0 && m.historyCursor < len(m.historyEntries) {
+					entry := m.historyEntries[m.historyCursor]
+					_ = downloader.RemoveFromMasterList(entry.URLHash)
+					m.historyEntries, _ = downloader.LoadCompletedDownloads()
+					if m.historyCursor >= len(m.historyEntries) && m.historyCursor > 0 {
+						m.historyCursor--
+					}
+				}
+				return m, nil
+			}
+			return m, nil
+
+		case DuplicateWarningState:
+			if msg.String() == "c" || msg.String() == "C" {
+				// Continue anyway - add the download
+				nextID := m.NextDownloadID
+				m.NextDownloadID++
+				newDownload := NewDownloadModel(nextID, m.pendingURL, "Queued", 0)
+				m.downloads = append(m.downloads, newDownload)
+
+				cfg := downloader.DownloadConfig{
+					URL:        m.pendingURL,
+					OutputPath: m.pendingPath,
+					ID:         nextID,
+					Filename:   m.pendingFilename,
+					Verbose:    false,
+					ProgressCh: m.progressChan,
+					State:      newDownload.state,
+				}
+				m.Pool.Add(cfg)
+				m.state = DashboardState
+				return m, nil
+			}
+			if msg.String() == "x" || msg.String() == "X" || msg.String() == "esc" {
+				// Cancel - don't add
+				m.state = DashboardState
+				return m, nil
+			}
+			if msg.String() == "f" || msg.String() == "F" {
+				// Focus existing download
+				for i, d := range m.downloads {
+					if d.URL == m.pendingURL {
+						m.cursor = i
+						visibleCount := m.getVisibleCount()
+						if m.cursor < m.scrollOffset {
+							m.scrollOffset = m.cursor
+						} else if m.cursor >= m.scrollOffset+visibleCount {
+							m.scrollOffset = m.cursor - visibleCount + 1
+						}
+						break
+					}
+				}
+				m.state = DashboardState
+				return m, nil
+			}
+			return m, nil
 		}
 	}
 

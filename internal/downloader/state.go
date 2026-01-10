@@ -128,11 +128,13 @@ type MasterList struct {
 
 // DownloadEntry represents a download in the master list
 type DownloadEntry struct {
-	URLHash  string `json:"url_hash"`
-	URL      string `json:"url"`
-	DestPath string `json:"dest_path"`
-	Filename string `json:"filename"`
-	Status   string `json:"status"` // "paused", "completed", "error"
+	URLHash     string `json:"url_hash"`
+	URL         string `json:"url"`
+	DestPath    string `json:"dest_path"`
+	Filename    string `json:"filename"`
+	Status      string `json:"status"`       // "paused", "completed", "error"
+	TotalSize   int64  `json:"total_size"`   // File size in bytes
+	CompletedAt int64  `json:"completed_at"` // Unix timestamp when completed
 }
 
 func getMasterListPath() string {
@@ -237,4 +239,21 @@ func LoadPausedDownloads() ([]DownloadEntry, error) {
 	}
 
 	return paused, nil
+}
+
+// LoadCompletedDownloads returns all completed downloads from the master list
+func LoadCompletedDownloads() ([]DownloadEntry, error) {
+	list, err := LoadMasterList()
+	if err != nil {
+		return nil, err
+	}
+
+	var completed []DownloadEntry
+	for _, e := range list.Downloads {
+		if e.Status == "completed" {
+			completed = append(completed, e)
+		}
+	}
+
+	return completed, nil
 }
