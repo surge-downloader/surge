@@ -339,6 +339,13 @@ func formatSettingValue(value interface{}, typ string) string {
 			mb := float64(v) / (1024 * 1024)
 			return fmt.Sprintf("%.1f MB", mb)
 		}
+	case "int":
+		// Display as KB for buffer sizes
+		v := reflect.ValueOf(value)
+		if v.Kind() == reflect.Int {
+			kb := float64(v.Int()) / 1024
+			return fmt.Sprintf("%.0f KB", kb)
+		}
 	case "float64":
 		if v, ok := value.(float64); ok {
 			return fmt.Sprintf("%.2f", v)
