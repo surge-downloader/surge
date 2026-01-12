@@ -125,12 +125,11 @@ func (m RootModel) View() string {
 
 	// --- SECTION 1: HEADER & LOGO (Top Left) + LOG BOX (Top Right) ---
 	logoText := `
-                           __  
-   _______  ___________ ___\ \ 
-  / ___/ / / / ___/ __ '/ _ \ \
- (__  ) /_/ / /  / /_/ /  __/ /
-/____/\__,_/_/   \__, /\___/_/ 
-                /____/         `
+   _______  ___________ ____ 
+  / ___/ / / / ___/ __ '/ _ \
+ (__  ) /_/ / /  / /_/ /  __/
+/____/\__,_/_/   \__, /\___/ 
+                /____/       `
 
 	// Calculate stats for tab bar
 	active, queued, downloaded := m.CalculateStats()
