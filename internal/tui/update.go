@@ -63,6 +63,56 @@ func (m *RootModel) addLogEntry(msg string) {
 	m.logViewport.GotoBottom()
 }
 
+// checkForDuplicate checks if a compatible download already exists
+func (m RootModel) checkForDuplicate(url string) *DownloadModel {
+	if !m.Settings.General.WarnOnDuplicate {
+		return nil
+	}
+	normalizedInputURL := strings.TrimRight(url, "/")
+	for _, d := range m.downloads {
+		// Ignore completed downloads
+		if d.done {
+			continue
+		}
+		normalizedExistingURL := strings.TrimRight(d.URL, "/")
+		if normalizedExistingURL == normalizedInputURL {
+			return d
+		}
+	}
+	return nil
+}
+
+// startDownload initiates a new download
+func (m RootModel) startDownload(url, path, filename string) (RootModel, tea.Cmd) {
+	// Generate unique filename to avoid overwriting
+	// Note: We do this check here because it applies to ALL new downloads
+	finalFilename := m.generateUniqueFilename(path, filename)
+
+	nextID := uuid.New().String()
+	newDownload := NewDownloadModel(nextID, url, "Queued", 0)
+	m.downloads = append(m.downloads, newDownload)
+
+	cfg := downloader.DownloadConfig{
+		URL:        url,
+		OutputPath: path,
+		ID:         nextID,
+		Filename:   finalFilename,
+		Verbose:    false,
+		ProgressCh: m.progressChan,
+		State:      newDownload.state,
+		Runtime:    convertRuntimeConfig(m.Settings.ToRuntimeConfig()),
+	}
+
+	utils.Debug("Adding to Queue: %s -> %s", url, finalFilename)
+	m.Pool.Add(cfg)
+
+	m.SelectedDownloadID = nextID
+	m.activeTab = TabQueued
+	m.UpdateListItems()
+
+	return m, nil
+}
+
 // Update handles messages and updates the model
 func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
@@ -87,48 +137,18 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
-		// Check for duplicate URL in active downloads (if warning enabled)
-		if m.Settings.General.WarnOnDuplicate {
-			normalizedInputURL := strings.TrimRight(msg.URL, "/")
-			for _, d := range m.downloads {
-				normalizedExistingURL := strings.TrimRight(d.URL, "/")
-				if normalizedExistingURL == normalizedInputURL {
-					utils.Debug("Duplicate download detected from extension: %s", msg.URL)
-					m.pendingURL = msg.URL
-					m.pendingPath = path
-					m.pendingFilename = msg.Filename
-					m.duplicateInfo = d.Filename
-					m.state = DuplicateWarningState
-					return m, nil
-				}
-			}
+		// Check for duplicate URL
+		if d := m.checkForDuplicate(msg.URL); d != nil {
+			utils.Debug("Duplicate download detected from extension: %s", msg.URL)
+			m.pendingURL = msg.URL
+			m.pendingPath = path
+			m.pendingFilename = msg.Filename
+			m.duplicateInfo = d.Filename
+			m.state = DuplicateWarningState
+			return m, nil
 		}
 
-		nextID := uuid.New().String()
-		newDownload := NewDownloadModel(nextID, msg.URL, "Queued", 0)
-		m.downloads = append(m.downloads, newDownload)
-
-		cfg := downloader.DownloadConfig{
-			URL:        msg.URL,
-			OutputPath: path,
-			ID:         nextID,
-			Filename:   msg.Filename,
-			Verbose:    false,
-			ProgressCh: m.progressChan,
-			State:      newDownload.state,
-			Runtime:    convertRuntimeConfig(m.Settings.ToRuntimeConfig()),
-		}
-
-		utils.Debug("Adding download from server: %s", msg.URL)
-		m.Pool.Add(cfg)
-
-		// Focus the new download
-		m.SelectedDownloadID = nextID
-		m.activeTab = TabQueued
-
-		// Update list items
-		m.UpdateListItems()
-		return m, nil
+		return m.startDownload(msg.URL, path, msg.Filename)
 
 	case messages.DownloadStartedMsg:
 		// Find the download and update with real metadata + start polling
@@ -552,46 +572,18 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				filename := m.inputs[2].Value()
 
-				// Check for duplicate URL in active downloads (if warning enabled)
-				if m.Settings.General.WarnOnDuplicate {
-					for _, d := range m.downloads {
-						if d.URL == url {
-							m.pendingURL = url
-							m.pendingPath = path
-							m.pendingFilename = filename
-							m.duplicateInfo = d.Filename
-							m.state = DuplicateWarningState
-							return m, nil
-						}
-					}
+				// Check for duplicate URL
+				if d := m.checkForDuplicate(url); d != nil {
+					m.pendingURL = url
+					m.pendingPath = path
+					m.pendingFilename = filename
+					m.duplicateInfo = d.Filename
+					m.state = DuplicateWarningState
+					return m, nil
 				}
 
 				m.state = DashboardState
-
-				// Create download with state and reporter
-				nextID := uuid.New().String()
-				newDownload := NewDownloadModel(nextID, url, "Queued", 0)
-				m.downloads = append(m.downloads, newDownload)
-
-				// Create config
-				cfg := downloader.DownloadConfig{
-					URL:        url,
-					OutputPath: path,
-					ID:         nextID,
-					Verbose:    false,
-					ProgressCh: m.progressChan,
-					State:      newDownload.state,
-					Runtime:    convertRuntimeConfig(m.Settings.ToRuntimeConfig()),
-				}
-
-				utils.Debug("Adding to Queue")
-				m.Pool.Add(cfg)
-
-				m.SelectedDownloadID = nextID
-				m.activeTab = TabQueued
-
-				m.UpdateListItems()
-				return m, nil
+				return m.startDownload(url, path, filename)
 			}
 
 			// Up/Down navigation between inputs
@@ -696,30 +688,9 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case DuplicateWarningState:
 			if msg.String() == "c" || msg.String() == "C" {
-				// Continue anyway - add the download with modified filename
-				// Generate unique filename by appending (1), (2), etc.
-				uniqueFilename := m.generateUniqueFilename(m.pendingFilename)
-
-				nextID := uuid.New().String()
-				newDownload := NewDownloadModel(nextID, m.pendingURL, "Queued", 0)
-				m.downloads = append(m.downloads, newDownload)
-
-				cfg := downloader.DownloadConfig{
-					URL:        m.pendingURL,
-					OutputPath: m.pendingPath,
-					ID:         nextID,
-					Filename:   uniqueFilename,
-					Verbose:    false,
-					ProgressCh: m.progressChan,
-					State:      newDownload.state,
-					Runtime:    convertRuntimeConfig(m.Settings.ToRuntimeConfig()),
-				}
-				m.Pool.Add(cfg)
+				// Continue anyway - startDownload handles unique filename generation
 				m.state = DashboardState
-				m.SelectedDownloadID = nextID
-				m.activeTab = TabQueued
-				m.UpdateListItems()
-				return m, nil
+				return m.startDownload(m.pendingURL, m.pendingPath, m.pendingFilename)
 			}
 			if msg.String() == "x" || msg.String() == "X" || msg.String() == "esc" {
 				// Cancel - don't add
@@ -742,43 +713,16 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case ExtensionConfirmationState:
 			if msg.String() == "y" || msg.String() == "Y" {
 				// Confirmed - proceed to add (checking for duplicates first)
-				if m.Settings.General.WarnOnDuplicate {
-					normalizedInputURL := strings.TrimRight(m.pendingURL, "/")
-					for _, d := range m.downloads {
-						normalizedExistingURL := strings.TrimRight(d.URL, "/")
-						if normalizedExistingURL == normalizedInputURL {
-							utils.Debug("Duplicate download detected after confirmation: %s", m.pendingURL)
-							m.duplicateInfo = d.Filename
-							m.state = DuplicateWarningState
-							return m, nil
-						}
-					}
+				if d := m.checkForDuplicate(m.pendingURL); d != nil {
+					utils.Debug("Duplicate download detected after confirmation: %s", m.pendingURL)
+					m.duplicateInfo = d.Filename
+					m.state = DuplicateWarningState
+					return m, nil
 				}
 
 				// No duplicate (or warning disabled) - add to queue
-				nextID := uuid.New().String()
-				newDownload := NewDownloadModel(nextID, m.pendingURL, "Queued", 0)
-				m.downloads = append(m.downloads, newDownload)
-
-				cfg := downloader.DownloadConfig{
-					URL:        m.pendingURL,
-					OutputPath: m.pendingPath,
-					ID:         nextID,
-					Filename:   m.pendingFilename,
-					Verbose:    false,
-					ProgressCh: m.progressChan,
-					State:      newDownload.state,
-					Runtime:    convertRuntimeConfig(m.Settings.ToRuntimeConfig()),
-				}
-
-				utils.Debug("Adding download from extension (confirmed): %s", m.pendingURL)
-				m.Pool.Add(cfg)
-
 				m.state = DashboardState
-				m.SelectedDownloadID = nextID
-				m.activeTab = TabQueued
-				m.UpdateListItems()
-				return m, nil
+				return m.startDownload(m.pendingURL, m.pendingPath, m.pendingFilename)
 			}
 			if msg.String() == "n" || msg.String() == "N" || msg.String() == "esc" {
 				// Cancelled
@@ -935,23 +879,33 @@ func (m *RootModel) updateListTitle() {
 }
 
 // generateUniqueFilename creates a unique filename by appending (1), (2), etc.
-// if the filename already exists in the current downloads list
-func (m *RootModel) generateUniqueFilename(filename string) string {
+// if the filename already exists in the destination folder OR in the current downloads list
+func (m *RootModel) generateUniqueFilename(dir, filename string) string {
 	if filename == "" {
 		return filename // Let the downloader auto-detect
 	}
 
 	// Check if any download already has this filename
-	exists := func(name string) bool {
+	existsInDownloads := func(name string) bool {
 		for _, d := range m.downloads {
-			if d.Filename == name {
+			// Don't check against completed downloads in the list,
+			// as we rely on filesystem check for those.
+			// But do check active/queued ones to avoid collision before file is created.
+			if !d.done && d.Filename == name {
 				return true
 			}
 		}
 		return false
 	}
 
-	if !exists(filename) {
+	// Check if file exists on disk
+	existsOnDisk := func(name string) bool {
+		path := filepath.Join(dir, name)
+		_, err := os.Stat(path)
+		return !os.IsNotExist(err)
+	}
+
+	if !existsInDownloads(filename) && !existsOnDisk(filename) {
 		return filename
 	}
 
@@ -962,7 +916,7 @@ func (m *RootModel) generateUniqueFilename(filename string) string {
 	// Try (1), (2), etc. until we find a unique one
 	for i := 1; i <= 100; i++ {
 		candidate := fmt.Sprintf("%s(%d)%s", base, i, ext)
-		if !exists(candidate) {
+		if !existsInDownloads(candidate) && !existsOnDisk(candidate) {
 			return candidate
 		}
 	}
