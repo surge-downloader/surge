@@ -188,6 +188,14 @@ func TUIDownload(ctx context.Context, cfg DownloadConfig) error {
 
 	// Construct proper output path
 	destPath := cfg.OutputPath
+
+	// Auto-create output directory if it doesn't exist
+	if _, err := os.Stat(cfg.OutputPath); os.IsNotExist(err) {
+		if mkErr := os.MkdirAll(cfg.OutputPath, 0755); mkErr != nil {
+			utils.Debug("Failed to create output directory: %v", mkErr)
+		}
+	}
+
 	if info, err := os.Stat(cfg.OutputPath); err == nil && info.IsDir() {
 		// Use cfg.Filename if TUI provided one, otherwise use probe.Filename
 		filename := probe.Filename
