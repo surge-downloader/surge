@@ -73,6 +73,43 @@ type ActiveTask struct {
 	WindowBytes int64     // Bytes downloaded in current window (atomic)
 }
 
+// RemainingBytes returns the number of bytes left for this task
+func (at *ActiveTask) RemainingBytes() int64 {
+	current := atomic.LoadInt64(&at.CurrentOffset)
+	stopAt := atomic.LoadInt64(&at.StopAt)
+	if current >= stopAt {
+		return 0
+	}
+	return stopAt - current
+}
+
+// RemainingTask returns a Task representing the remaining work, or nil if complete
+func (at *ActiveTask) RemainingTask() *Task {
+	current := atomic.LoadInt64(&at.CurrentOffset)
+	stopAt := atomic.LoadInt64(&at.StopAt)
+	if current >= stopAt {
+		return nil
+	}
+	return &Task{Offset: current, Length: stopAt - current}
+}
+
+// GetSpeed returns the current EMA-smoothed speed
+func (at *ActiveTask) GetSpeed() float64 {
+	at.SpeedMu.Lock()
+	defer at.SpeedMu.Unlock()
+	return at.Speed
+}
+
+// alignedSplitSize calculates a split size that is half of remaining, aligned to AlignSize
+// Returns 0 if the split would be smaller than MinChunk
+func alignedSplitSize(remaining int64) int64 {
+	half := (remaining / 2 / AlignSize) * AlignSize
+	if half < MinChunk {
+		return 0
+	}
+	return half
+}
+
 // TaskQueue is a thread-safe work-stealing queue
 type TaskQueue struct {
 	tasks       []Task
@@ -186,8 +223,8 @@ func (q *TaskQueue) SplitLargestIfNeeded() bool {
 	t := q.tasks[idx]
 
 	// Split in half, aligned to AlignSize
-	half := (t.Length / 2 / AlignSize) * AlignSize
-	if half < MinChunk {
+	half := alignedSplitSize(t.Length)
+	if half == 0 {
 		return false // Halves would be too small
 	}
 
@@ -481,13 +518,8 @@ func (d *ConcurrentDownloader) Download(ctx context.Context, rawurl, destPath st
 		// Also collect active tasks as remaining work
 		d.activeMu.Lock()
 		for _, active := range d.activeTasks {
-			current := atomic.LoadInt64(&active.CurrentOffset)
-			stopAt := atomic.LoadInt64(&active.StopAt)
-			if current < stopAt {
-				remainingTasks = append(remainingTasks, Task{
-					Offset: current,
-					Length: stopAt - current,
-				})
+			if remaining := active.RemainingTask(); remaining != nil {
+				remainingTasks = append(remainingTasks, *remaining)
 			}
 		}
 		d.activeMu.Unlock()
@@ -626,20 +658,17 @@ func (d *ConcurrentDownloader) worker(ctx context.Context, id int, rawurl string
 			// but parent context is still fine
 			if wasExternallyCancelled && lastErr != nil {
 				// Health monitor cancelled this task - re-queue REMAINING work only
-				current := atomic.LoadInt64(&activeTask.CurrentOffset)
-
-				stopAt := atomic.LoadInt64(&activeTask.StopAt)
-				// dont go past orignal end
-				orignalEnd := task.Offset + task.Length
-				if stopAt > orignalEnd {
-					stopAt = orignalEnd
-				}
-
-				if current < stopAt {
-					remainingTask := Task{Offset: current, Length: stopAt - current}
-					queue.Push(remainingTask)
-					utils.Debug("Worker %d: health-cancelled task requeued (remaining: %d bytes from offset %d)",
-						id, stopAt-current, current)
+				if remaining := activeTask.RemainingTask(); remaining != nil {
+					// Clamp to original task end (don't go past original boundary)
+					originalEnd := task.Offset + task.Length
+					if remaining.Offset+remaining.Length > originalEnd {
+						remaining.Length = originalEnd - remaining.Offset
+					}
+					if remaining.Length > 0 {
+						queue.Push(*remaining)
+						utils.Debug("Worker %d: health-cancelled task requeued (remaining: %d bytes from offset %d)",
+							id, remaining.Length, remaining.Offset)
+					}
 				}
 				// Delete from active tasks and move to next task (don't retry from scratch)
 				d.activeMu.Lock()
@@ -838,10 +867,7 @@ func (d *ConcurrentDownloader) StealWork(queue *TaskQueue) bool {
 
 	// Find the worker with the MOST remaining work
 	for id, active := range d.activeTasks {
-		current := atomic.LoadInt64(&active.CurrentOffset)
-		stopAt := atomic.LoadInt64(&active.StopAt)
-		remaining := stopAt - current
-
+		remaining := active.RemainingBytes()
 		if remaining > MinChunk && remaining > maxRemaining {
 			maxRemaining = remaining
 			bestID = id
@@ -857,12 +883,9 @@ func (d *ConcurrentDownloader) StealWork(queue *TaskQueue) bool {
 	remaining := maxRemaining
 	active := bestActive
 
-	// Split in half
-	splitSize := remaining / 2
-	// Align to 4KB
-	splitSize = (splitSize / AlignSize) * AlignSize
-
-	if splitSize < MinChunk {
+	// Split in half, aligned to AlignSize
+	splitSize := alignedSplitSize(remaining)
+	if splitSize == 0 {
 		return false
 	}
 
@@ -918,12 +941,10 @@ func (d *ConcurrentDownloader) checkWorkerHealth() {
 	var totalSpeed float64
 	var speedCount int
 	for _, active := range d.activeTasks {
-		active.SpeedMu.Lock()
-		if active.Speed > 0 {
-			totalSpeed += active.Speed
+		if speed := active.GetSpeed(); speed > 0 {
+			totalSpeed += speed
 			speedCount++
 		}
-		active.SpeedMu.Unlock()
 	}
 
 	var meanSpeed float64
@@ -961,10 +982,7 @@ func (d *ConcurrentDownloader) checkWorkerHealth() {
 		// Check for slow worker
 		// Only cancel if: below threshold
 		if meanSpeed > 0 {
-			active.SpeedMu.Lock()
-			workerSpeed := active.Speed
-			active.SpeedMu.Unlock()
-
+			workerSpeed := active.GetSpeed()
 			threshold := d.Runtime.GetSlowWorkerThreshold()
 			isBelowThreshold := workerSpeed > 0 && workerSpeed < threshold*meanSpeed
 
