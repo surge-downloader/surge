@@ -1,4 +1,4 @@
-package downloader
+package single
 
 import (
 	"context"
@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/surge-downloader/surge/internal/config"
+	"github.com/surge-downloader/surge/internal/download/types"
 	"github.com/surge-downloader/surge/internal/testutil"
 )
 
@@ -17,8 +18,8 @@ import (
 // =============================================================================
 
 func TestNewSingleDownloader(t *testing.T) {
-	state := NewProgressState("test", 1000)
-	runtime := &RuntimeConfig{}
+	state := types.NewProgressState("test", 1000)
+	runtime := &types.RuntimeConfig{}
 
 	downloader := NewSingleDownloader("test-id", nil, state, runtime)
 
@@ -56,8 +57,8 @@ func TestSingleDownloader_Download_Success(t *testing.T) {
 	defer cleanup()
 
 	destPath := filepath.Join(tmpDir, "single_test.bin")
-	state := NewProgressState("single-test", fileSize)
-	runtime := &RuntimeConfig{WorkerBufferSize: 8 * KB}
+	state := types.NewProgressState("single-test", fileSize)
+	runtime := &types.RuntimeConfig{WorkerBufferSize: 8 * types.KB}
 
 	downloader := NewSingleDownloader("single-id", nil, state, runtime)
 
@@ -75,7 +76,7 @@ func TestSingleDownloader_Download_Success(t *testing.T) {
 	}
 
 	// Verify .surge file was removed
-	surgeFile := destPath + IncompleteSuffix
+	surgeFile := destPath + types.IncompleteSuffix
 	if testutil.FileExists(surgeFile) {
 		t.Error(".surge file should be removed after successful download")
 	}
@@ -92,7 +93,7 @@ func TestSingleDownloader_Download_Cancellation(t *testing.T) {
 	}
 
 	// Large file with latency
-	fileSize := int64(5 * MB)
+	fileSize := int64(5 * types.MB)
 	server := testutil.NewMockServer(
 		testutil.WithFileSize(fileSize),
 		testutil.WithRangeSupport(false),
@@ -104,8 +105,8 @@ func TestSingleDownloader_Download_Cancellation(t *testing.T) {
 	defer cleanup()
 
 	destPath := filepath.Join(tmpDir, "cancel_single.bin")
-	state := NewProgressState("cancel-single", fileSize)
-	runtime := &RuntimeConfig{}
+	state := types.NewProgressState("cancel-single", fileSize)
+	runtime := &types.RuntimeConfig{}
 
 	downloader := NewSingleDownloader("cancel-id", nil, state, runtime)
 
@@ -136,7 +137,7 @@ func TestSingleDownloader_Download_ProgressTracking(t *testing.T) {
 		t.Fatalf("Failed to create config dirs: %v", err)
 	}
 
-	fileSize := int64(256 * KB)
+	fileSize := int64(256 * types.KB)
 	server := testutil.NewMockServer(
 		testutil.WithFileSize(fileSize),
 		testutil.WithRangeSupport(false),
@@ -148,8 +149,8 @@ func TestSingleDownloader_Download_ProgressTracking(t *testing.T) {
 	defer cleanup()
 
 	destPath := filepath.Join(tmpDir, "progress_single.bin")
-	state := NewProgressState("progress-single", fileSize)
-	runtime := &RuntimeConfig{WorkerBufferSize: 16 * KB}
+	state := types.NewProgressState("progress-single", fileSize)
+	runtime := &types.RuntimeConfig{WorkerBufferSize: 16 * types.KB}
 
 	downloader := NewSingleDownloader("progress-id", nil, state, runtime)
 
@@ -185,8 +186,8 @@ func TestSingleDownloader_Download_ServerError(t *testing.T) {
 	defer cleanup()
 
 	destPath := filepath.Join(tmpDir, "error_single.bin")
-	state := NewProgressState("error-single", 1024)
-	runtime := &RuntimeConfig{}
+	state := types.NewProgressState("error-single", 1024)
+	runtime := &types.RuntimeConfig{}
 
 	downloader := NewSingleDownloader("error-id", nil, state, runtime)
 
@@ -204,7 +205,7 @@ func TestSingleDownloader_Download_WithLatency(t *testing.T) {
 		t.Fatalf("Failed to create config dirs: %v", err)
 	}
 
-	fileSize := int64(32 * KB)
+	fileSize := int64(32 * types.KB)
 	server := testutil.NewMockServer(
 		testutil.WithFileSize(fileSize),
 		testutil.WithRangeSupport(false),
@@ -216,8 +217,8 @@ func TestSingleDownloader_Download_WithLatency(t *testing.T) {
 	defer cleanup()
 
 	destPath := filepath.Join(tmpDir, "latency_single.bin")
-	state := NewProgressState("latency-single", fileSize)
-	runtime := &RuntimeConfig{}
+	state := types.NewProgressState("latency-single", fileSize)
+	runtime := &types.RuntimeConfig{}
 
 	downloader := NewSingleDownloader("latency-id", nil, state, runtime)
 
@@ -246,7 +247,7 @@ func TestSingleDownloader_Download_ContentIntegrity(t *testing.T) {
 		t.Fatalf("Failed to create config dirs: %v", err)
 	}
 
-	fileSize := int64(64 * KB)
+	fileSize := int64(64 * types.KB)
 	server := testutil.NewMockServer(
 		testutil.WithFileSize(fileSize),
 		testutil.WithRangeSupport(false),
@@ -258,8 +259,8 @@ func TestSingleDownloader_Download_ContentIntegrity(t *testing.T) {
 	defer cleanup()
 
 	destPath := filepath.Join(tmpDir, "content_single.bin")
-	state := NewProgressState("content-single", fileSize)
-	runtime := &RuntimeConfig{}
+	state := types.NewProgressState("content-single", fileSize)
+	runtime := &types.RuntimeConfig{}
 
 	downloader := NewSingleDownloader("content-id", nil, state, runtime)
 
@@ -383,7 +384,7 @@ func TestCopyFile_LargeFile(t *testing.T) {
 	tmpDir, cleanup, _ := testutil.TempDir("surge-copy-test")
 	defer cleanup()
 
-	size := int64(5 * MB)
+	size := int64(5 * types.MB)
 	srcPath, _ := testutil.CreateTestFile(tmpDir, "large.bin", size, false)
 	dstPath := filepath.Join(tmpDir, "large_copy.bin")
 
@@ -401,7 +402,7 @@ func TestCopyFile_ContentVerification(t *testing.T) {
 	tmpDir, cleanup, _ := testutil.TempDir("surge-copy-content")
 	defer cleanup()
 
-	size := int64(128 * KB)
+	size := int64(128 * types.KB)
 	srcPath, _ := testutil.CreateTestFile(tmpDir, "random.bin", size, true) // Random data
 	dstPath := filepath.Join(tmpDir, "random_copy.bin")
 
@@ -428,7 +429,7 @@ func TestSingleDownloader_StreamingServer(t *testing.T) {
 		t.Fatalf("Failed to create config dirs: %v", err)
 	}
 
-	fileSize := int64(1 * MB)
+	fileSize := int64(1 * types.MB)
 	server := testutil.NewStreamingMockServer(fileSize,
 		testutil.WithRangeSupport(false),
 	)
@@ -438,8 +439,8 @@ func TestSingleDownloader_StreamingServer(t *testing.T) {
 	defer cleanup()
 
 	destPath := filepath.Join(tmpDir, "stream_single.bin")
-	state := NewProgressState("stream-single", fileSize)
-	runtime := &RuntimeConfig{}
+	state := types.NewProgressState("stream-single", fileSize)
+	runtime := &types.RuntimeConfig{}
 
 	downloader := NewSingleDownloader("stream-id", nil, state, runtime)
 
@@ -465,12 +466,12 @@ func TestSingleDownloader_FailAfterBytes(t *testing.T) {
 		t.Fatalf("Failed to create config dirs: %v", err)
 	}
 
-	fileSize := int64(256 * KB)
+	fileSize := int64(256 * types.KB)
 	// Server fails after sending 50KB
 	server := testutil.NewMockServer(
 		testutil.WithFileSize(fileSize),
 		testutil.WithRangeSupport(false),
-		testutil.WithFailAfterBytes(50*KB),
+		testutil.WithFailAfterBytes(50*types.KB),
 	)
 	defer server.Close()
 
@@ -478,8 +479,8 @@ func TestSingleDownloader_FailAfterBytes(t *testing.T) {
 	defer cleanup()
 
 	destPath := filepath.Join(tmpDir, "failafter_single.bin")
-	state := NewProgressState("failafter-single", fileSize)
-	runtime := &RuntimeConfig{}
+	state := types.NewProgressState("failafter-single", fileSize)
+	runtime := &types.RuntimeConfig{}
 
 	downloader := NewSingleDownloader("failafter-id", nil, state, runtime)
 
@@ -494,7 +495,7 @@ func TestSingleDownloader_FailAfterBytes(t *testing.T) {
 
 	// Partial file should exist with .surge suffix
 	stats := server.Stats()
-	if stats.BytesServed < 50*KB {
+	if stats.BytesServed < 50*types.KB {
 		t.Errorf("Expected at least 50KB served before failure, got %d", stats.BytesServed)
 	}
 }
@@ -508,7 +509,7 @@ func TestSingleDownloader_NilState(t *testing.T) {
 		t.Fatalf("Failed to create config dirs: %v", err)
 	}
 
-	fileSize := int64(32 * KB)
+	fileSize := int64(32 * types.KB)
 	server := testutil.NewMockServer(
 		testutil.WithFileSize(fileSize),
 		testutil.WithRangeSupport(false),
@@ -519,7 +520,7 @@ func TestSingleDownloader_NilState(t *testing.T) {
 	defer cleanup()
 
 	destPath := filepath.Join(tmpDir, "nilstate_single.bin")
-	runtime := &RuntimeConfig{}
+	runtime := &types.RuntimeConfig{}
 
 	// Create downloader with nil state
 	downloader := NewSingleDownloader("nilstate-id", nil, nil, runtime)

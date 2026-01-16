@@ -1,7 +1,9 @@
-package downloader
+package concurrent
 
 import (
 	"testing"
+
+	"github.com/surge-downloader/surge/internal/download/types"
 )
 
 func TestNewTaskQueue(t *testing.T) {
@@ -22,7 +24,7 @@ func TestTaskQueue_PushPop(t *testing.T) {
 	q := NewTaskQueue()
 
 	// Push a task
-	task := Task{Offset: 0, Length: 1000}
+	task := types.Task{Offset: 0, Length: 1000}
 	q.Push(task)
 
 	if q.Len() != 1 {
@@ -31,7 +33,7 @@ func TestTaskQueue_PushPop(t *testing.T) {
 
 	// Pop in a goroutine (Pop blocks if empty)
 	done := make(chan struct{})
-	var popped Task
+	var popped types.Task
 	var ok bool
 	go func() {
 		popped, ok = q.Pop()
@@ -51,7 +53,7 @@ func TestTaskQueue_PushPop(t *testing.T) {
 func TestTaskQueue_PushMultiple(t *testing.T) {
 	q := NewTaskQueue()
 
-	tasks := []Task{
+	tasks := []types.Task{
 		{Offset: 0, Length: 1000},
 		{Offset: 1000, Length: 1000},
 		{Offset: 2000, Length: 1000},
@@ -85,7 +87,7 @@ func TestTaskQueue_Close(t *testing.T) {
 func TestTaskQueue_DrainRemaining(t *testing.T) {
 	q := NewTaskQueue()
 
-	tasks := []Task{
+	tasks := []types.Task{
 		{Offset: 0, Length: 1000},
 		{Offset: 1000, Length: 1000},
 		{Offset: 2000, Length: 1000},
@@ -106,7 +108,7 @@ func TestTaskQueue_SplitLargestIfNeeded(t *testing.T) {
 	q := NewTaskQueue()
 
 	// Add a task large enough to split (> 2*MinChunk)
-	largeTask := Task{Offset: 0, Length: 10 * MB} // 10MB, should be splittable
+	largeTask := types.Task{Offset: 0, Length: 10 * types.MB} // 10MB, should be splittable
 	q.Push(largeTask)
 
 	split := q.SplitLargestIfNeeded()
@@ -123,7 +125,7 @@ func TestTaskQueue_SplitLargestIfNeeded_TooSmall(t *testing.T) {
 	q := NewTaskQueue()
 
 	// Add a task too small to split (< 2*MinChunk)
-	smallTask := Task{Offset: 0, Length: MinChunk} // Exactly MinChunk, shouldn't split
+	smallTask := types.Task{Offset: 0, Length: types.MinChunk} // Exactly MinChunk, shouldn't split
 	q.Push(smallTask)
 
 	split := q.SplitLargestIfNeeded()
@@ -137,7 +139,7 @@ func TestTaskQueue_SplitLargestIfNeeded_TooSmall(t *testing.T) {
 }
 
 func TestTask_Struct(t *testing.T) {
-	task := Task{Offset: 100, Length: 500}
+	task := types.Task{Offset: 100, Length: 500}
 
 	if task.Offset != 100 {
 		t.Errorf("Offset = %d, want 100", task.Offset)
