@@ -3,7 +3,7 @@ package tui
 import (
 	"time"
 
-	"github.com/surge-downloader/surge/internal/downloader"
+	"github.com/surge-downloader/surge/internal/download/types"
 )
 
 const (
@@ -28,8 +28,8 @@ const (
 	FilePickerHeight = 12 // Height for file picker display
 
 	// Channel Buffers - use consolidated constant from downloader
-	ProgressChannelBuffer = downloader.ProgressChannelBuffer
+	ProgressChannelBuffer = types.ProgressChannelBuffer
 
 	// Units - use consolidated constant from downloader
-	Megabyte = downloader.Megabyte
+	Megabyte = types.Megabyte
 )

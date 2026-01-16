@@ -9,7 +9,8 @@ import (
 	"time"
 
 	"github.com/surge-downloader/surge/internal/config"
-	"github.com/surge-downloader/surge/internal/downloader"
+	"github.com/surge-downloader/surge/internal/download/state"
+	"github.com/surge-downloader/surge/internal/download/types"
 	"github.com/surge-downloader/surge/internal/messages"
 	"github.com/surge-downloader/surge/internal/utils"
 
@@ -30,9 +31,9 @@ func notificationTickCmd() tea.Cmd {
 	})
 }
 
-// convertRuntimeConfig converts config.RuntimeConfig to downloader.RuntimeConfig
-func convertRuntimeConfig(rc *config.RuntimeConfig) *downloader.RuntimeConfig {
-	return &downloader.RuntimeConfig{
+// convertRuntimeConfig converts config.RuntimeConfig to types.RuntimeConfig
+func convertRuntimeConfig(rc *config.RuntimeConfig) *types.RuntimeConfig {
+	return &types.RuntimeConfig{
 		MaxConnectionsPerHost: rc.MaxConnectionsPerHost,
 		MaxGlobalConnections:  rc.MaxGlobalConnections,
 		UserAgent:             rc.UserAgent,
@@ -129,7 +130,7 @@ func (m RootModel) startDownload(url, path, filename string) (RootModel, tea.Cmd
 	newDownload := NewDownloadModel(nextID, url, "Queued", 0)
 	m.downloads = append(m.downloads, newDownload)
 
-	cfg := downloader.DownloadConfig{
+	cfg := types.DownloadConfig{
 		URL:        url,
 		OutputPath: path,
 		ID:         nextID,
@@ -282,8 +283,8 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.addLogEntry(LogStyleComplete.Render(fmt.Sprintf("✔ Done: %s (%.2f MB/s)", d.Filename, speed/Megabyte)))
 
 				// Persist to history (TUI has the correct filename from DownloadStartedMsg)
-				_ = downloader.AddToMasterList(downloader.DownloadEntry{
-					URLHash:     downloader.URLHash(d.URL),
+				_ = state.AddToMasterList(types.DownloadEntry{
+					URLHash:     state.URLHash(d.URL),
 					ID:          d.ID,
 					URL:         d.URL,
 					DestPath:    d.Destination,
@@ -553,14 +554,14 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 						// Delete state files
 						if dl.URL != "" && dl.Destination != "" {
-							_ = downloader.DeleteStateByURL(dl.ID, dl.URL, dl.Destination)
+							_ = state.DeleteStateByURL(dl.ID, dl.URL, dl.Destination)
 						}
 
 						// Delete partial/incomplete files (only for non-completed downloads)
 						if !dl.done && dl.Destination != "" {
 							// Delete the .surge partial file with retries
 							// (worker may still hold file briefly after Cancel on Windows)
-							surgeFile := dl.Destination + downloader.IncompleteSuffix
+							surgeFile := dl.Destination + types.IncompleteSuffix
 							for i := 0; i < 5; i++ {
 								if err := os.Remove(surgeFile); err == nil {
 									break
@@ -571,7 +572,7 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 						// Remove completed downloads from master list (for Done tab persistence)
 						if dl.done && dl.URL != "" {
-							_ = downloader.RemoveFromMasterList(dl.ID)
+							_ = state.RemoveFromMasterList(dl.ID)
 						}
 
 						// Remove from list
@@ -585,7 +586,7 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// History
 			if key.Matches(msg, m.keys.Dashboard.History) {
 				// Open history view
-				if entries, err := downloader.LoadCompletedDownloads(); err == nil {
+				if entries, err := state.LoadCompletedDownloads(); err == nil {
 					m.historyEntries = entries
 					m.historyCursor = 0
 					m.state = HistoryState
@@ -609,7 +610,7 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 									outputPath = m.PWD
 								}
 							}
-							cfg := downloader.DownloadConfig{
+							cfg := types.DownloadConfig{
 								URL:        d.URL,
 								OutputPath: outputPath,
 								DestPath:   d.Destination, // Full path for state lookup
@@ -845,8 +846,8 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if key.Matches(msg, m.keys.History.Delete) {
 				if m.historyCursor >= 0 && m.historyCursor < len(m.historyEntries) {
 					entry := m.historyEntries[m.historyCursor]
-					_ = downloader.RemoveFromMasterList(entry.ID)
-					m.historyEntries, _ = downloader.LoadCompletedDownloads()
+					_ = state.RemoveFromMasterList(entry.ID)
+					m.historyEntries, _ = state.LoadCompletedDownloads()
 					if m.historyCursor >= len(m.historyEntries) && m.historyCursor > 0 {
 						m.historyCursor--
 					}
@@ -1198,7 +1199,7 @@ func (m *RootModel) generateUniqueFilename(dir, filename string) string {
 			return true
 		}
 		// Also check for incomplete download file (.surge extension)
-		if _, err := os.Stat(path + downloader.IncompleteSuffix); !os.IsNotExist(err) {
+		if _, err := os.Stat(path + types.IncompleteSuffix); !os.IsNotExist(err) {
 			return true
 		}
 		return false

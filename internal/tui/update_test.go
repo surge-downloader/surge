@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/surge-downloader/surge/internal/downloader"
+	"github.com/surge-downloader/surge/internal/download/types"
 )
 
 func TestGenerateUniqueFilename(t *testing.T) {
@@ -143,7 +143,7 @@ func TestGenerateUniqueFilename_EmptyFilename(t *testing.T) {
 
 func TestGenerateUniqueFilename_IncompleteSuffixConstant(t *testing.T) {
 	// Verify the constant we're using is correct
-	if downloader.IncompleteSuffix != ".surge" {
-		t.Errorf("IncompleteSuffix = %q, want .surge", downloader.IncompleteSuffix)
+	if types.IncompleteSuffix != ".surge" {
+		t.Errorf("IncompleteSuffix = %q, want .surge", types.IncompleteSuffix)
 	}
 }
