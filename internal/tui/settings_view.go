@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/junaid2005p/surge/internal/config"
+	"github.com/junaid2005p/surge/internal/tui/components"
 
 	"github.com/charmbracelet/lipgloss"
 )
@@ -28,16 +29,11 @@ func (m RootModel) viewSettings() string {
 	metadata := config.GetSettingsMetadata()
 
 	// === TAB BAR ===
-	var tabItems []string
-	for i, cat := range categories {
-		label := fmt.Sprintf("[%d] %s", i+1, cat)
-		if i == m.SettingsActiveTab {
-			tabItems = append(tabItems, ActiveTabStyle.Render(label))
-		} else {
-			tabItems = append(tabItems, TabStyle.Render(label))
-		}
+	var tabs []components.Tab
+	for _, cat := range categories {
+		tabs = append(tabs, components.Tab{Label: cat, Count: -1})
 	}
-	tabBar := lipgloss.JoinHorizontal(lipgloss.Left, tabItems...)
+	tabBar := components.RenderNumberedTabBar(tabs, m.SettingsActiveTab, ActiveTabStyle, TabStyle)
 
 	// === CONTENT AREA ===
 	currentCategory := categories[m.SettingsActiveTab]

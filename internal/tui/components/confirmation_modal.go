@@ -103,3 +103,16 @@ func (m ConfirmationModal) Centered(width, height int) string {
 	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center,
 		boxStyle.Render(m.View()))
 }
+
+// RenderCentered renders the modal with btop-style box, centered on screen
+// This combines RenderWithBtopBox + lipgloss.Place in a single call
+func (m ConfirmationModal) RenderCentered(screenWidth, screenHeight int, titleStyle lipgloss.Style) string {
+	// Center content within the box
+	innerWidth := m.Width - 4 // Account for borders
+	innerHeight := m.Height - 2
+	centeredContent := lipgloss.Place(innerWidth, innerHeight, lipgloss.Center, lipgloss.Center, m.View())
+	// Render the box with title in border
+	box := RenderBtopBox(titleStyle.Render(" "+m.Title+" "), "", centeredContent, m.Width, m.Height, m.BorderColor)
+	// Center on screen
+	return lipgloss.Place(screenWidth, screenHeight, lipgloss.Center, lipgloss.Center, box)
+}

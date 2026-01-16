@@ -397,8 +397,7 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if err != nil {
 					m.addLogEntry(LogStyleError.Render("✖ Failed to read batch file: " + err.Error()))
 					// Reset filepicker and return
-					m.filepicker.FileAllowed = false
-					m.filepicker.DirAllowed = true
+					m.resetFilepicker()
 					m.state = DashboardState
 					return m, nil
 				}
@@ -408,8 +407,7 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.batchFilePath = path
 
 				// Reset filepicker to directory mode
-				m.filepicker.FileAllowed = false
-				m.filepicker.DirAllowed = true
+				m.resetFilepicker()
 
 				m.state = BatchConfirmState
 				return m, nil
@@ -894,9 +892,7 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case BatchFilePickerState:
 			if key.Matches(msg, m.keys.FilePicker.Cancel) {
 				// Reset filepicker to directory mode and return
-				m.filepicker.FileAllowed = false
-				m.filepicker.DirAllowed = true
-				m.filepicker.AllowedTypes = nil
+				m.resetFilepicker()
 				m.state = DashboardState
 				return m, nil
 			}
@@ -919,9 +915,7 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if err != nil {
 					m.addLogEntry(LogStyleError.Render("✖ Failed to read batch file: " + err.Error()))
 					// Reset filepicker and return
-					m.filepicker.FileAllowed = false
-					m.filepicker.DirAllowed = true
-					m.filepicker.AllowedTypes = nil
+					m.resetFilepicker()
 					m.state = DashboardState
 					return m, nil
 				}
@@ -931,9 +925,7 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.batchFilePath = path
 
 				// Reset filepicker to directory mode
-				m.filepicker.FileAllowed = false
-				m.filepicker.DirAllowed = true
-				m.filepicker.AllowedTypes = nil
+				m.resetFilepicker()
 
 				m.state = BatchConfirmState
 				return m, nil

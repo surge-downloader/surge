@@ -60,3 +60,10 @@ func (m FilePickerModal) RenderWithBtopBox(
 func (m FilePickerModal) Centered(width, height int, box string) string {
 	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, box)
 }
+
+// RenderCentered renders the modal with btop-style box, centered on screen
+// This combines RenderWithBtopBox + Centered in a single call
+func (m FilePickerModal) RenderCentered(screenWidth, screenHeight int, titleStyle lipgloss.Style) string {
+	box := RenderBtopBox(titleStyle.Render(m.Title), "", m.View(), m.Width, m.Height, m.BorderColor)
+	return lipgloss.Place(screenWidth, screenHeight, lipgloss.Center, lipgloss.Center, box)
+}

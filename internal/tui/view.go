@@ -67,8 +67,7 @@ func (m RootModel) View() string {
 			m.keys.FilePicker,
 			ColorNeonPink,
 		)
-		box := picker.RenderWithBtopBox(renderBtopBox, PaneTitleStyle)
-		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
+		return picker.RenderCentered(m.width, m.height, PaneTitleStyle)
 	}
 
 	if m.state == SettingsState {
@@ -86,8 +85,7 @@ func (m RootModel) View() string {
 			Width:       60,
 			Height:      10,
 		}
-		box := modal.RenderWithBtopBox(renderBtopBox, PaneTitleStyle)
-		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
+		return modal.RenderCentered(m.width, m.height, PaneTitleStyle)
 	}
 
 	if m.state == ExtensionConfirmationState {
@@ -101,8 +99,7 @@ func (m RootModel) View() string {
 			Width:       60,
 			Height:      10,
 		}
-		box := modal.RenderWithBtopBox(renderBtopBox, PaneTitleStyle)
-		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
+		return modal.RenderCentered(m.width, m.height, PaneTitleStyle)
 	}
 
 	if m.state == BatchFilePickerState {
@@ -113,8 +110,7 @@ func (m RootModel) View() string {
 			m.keys.FilePicker,
 			ColorNeonCyan,
 		)
-		box := picker.RenderWithBtopBox(renderBtopBox, PaneTitleStyle)
-		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
+		return picker.RenderCentered(m.width, m.height, PaneTitleStyle)
 	}
 
 	if m.state == BatchConfirmState {
@@ -129,8 +125,7 @@ func (m RootModel) View() string {
 			Width:       60,
 			Height:      10,
 		}
-		box := modal.RenderWithBtopBox(renderBtopBox, PaneTitleStyle)
-		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
+		return modal.RenderCentered(m.width, m.height, PaneTitleStyle)
 	}
 
 	// === MAIN DASHBOARD LAYOUT ===
@@ -271,7 +266,7 @@ func (m RootModel) View() string {
 		fmt.Sprintf("%s %s", labelStyleStats.Render("Top:"), valueStyle.Render(fmt.Sprintf("%.2f", topSpeed))),
 		dimStyle.Render(fmt.Sprintf("  (%.0f Mbps)", topMbps)),
 		"",
-		fmt.Sprintf("%s %s", labelStyleStats.Render("Total:"), valueStyle.Render(formatBytes(totalDownloaded))),
+		fmt.Sprintf("%s %s", labelStyleStats.Render("Total:"), valueStyle.Render(utils.ConvertBytesToHumanReadable(totalDownloaded))),
 	)
 
 	// Style stats with a border box
@@ -661,20 +656,8 @@ func renderFocusedDetails(d *DownloadModel, w int) string {
 }
 
 func getDownloadStatus(d *DownloadModel) string {
-	style := lipgloss.NewStyle()
-
-	switch {
-	case d.err != nil:
-		return style.Foreground(ColorStateError).Render("✖ Error")
-	case d.done:
-		return style.Foreground(ColorStateDone).Render("✔ Completed")
-	case d.paused:
-		return style.Foreground(ColorStatePaused).Render("⏸ Paused")
-	case d.Speed == 0 && d.Downloaded == 0:
-		return style.Foreground(ColorStatePaused).Render("⋯ Queued")
-	default:
-		return style.Foreground(ColorStateDownloading).Render("⬇ Downloading")
-	}
+	status := components.DetermineStatus(d.done, d.paused, d.err != nil, d.Speed, d.Downloaded)
+	return status.Render()
 }
 
 func (m RootModel) calcTotalSpeed() float64 {
@@ -711,132 +694,19 @@ func truncateString(s string, i int) string {
 }
 
 func renderTabs(activeTab, activeCount, queuedCount, doneCount int) string {
-	tabs := []struct {
-		Label string
-		Count int
-	}{
-		{"Queued", queuedCount},
-		{"Active", activeCount},
-		{"Done", doneCount},
+	tabs := []components.Tab{
+		{Label: "Queued", Count: queuedCount},
+		{Label: "Active", Count: activeCount},
+		{Label: "Done", Count: doneCount},
 	}
-	var rendered []string
-	for i, t := range tabs {
-		var style lipgloss.Style
-		if i == activeTab {
-			style = ActiveTabStyle
-		} else {
-			style = TabStyle
-		}
-		label := fmt.Sprintf("%s (%d)", t.Label, t.Count)
-		rendered = append(rendered, style.Render(label))
-	}
-	return lipgloss.JoinHorizontal(lipgloss.Top, rendered...)
+	return components.RenderTabBar(tabs, activeTab, ActiveTabStyle, TabStyle)
 }
 
 // renderBtopBox creates a btop-style box with title embedded in the top border
 // Supports left and right titles (e.g., search on left, pane name on right)
 // Accepts pre-styled title strings
 // Example: ╭─ 🔍 Search... ─────────── Downloads ─╮
+// Delegates to components.RenderBtopBox for the actual rendering
 func renderBtopBox(leftTitle, rightTitle string, content string, width, height int, borderColor lipgloss.Color) string {
-	// Border characters
-	const (
-		topLeft     = "╭"
-		topRight    = "╮"
-		bottomLeft  = "╰"
-		bottomRight = "╯"
-		horizontal  = "─"
-		vertical    = "│"
-	)
-	innerWidth := width - 2
-	if innerWidth < 1 {
-		innerWidth = 1
-	}
-
-	leftTitleWidth := lipgloss.Width(leftTitle)
-	rightTitleWidth := lipgloss.Width(rightTitle)
-
-	// Calculate remaining horizontal space for the border
-	// Structure: ╭ + horizontal*? + leftTitle + horizontal*? + rightTitle + horizontal*? + ╮
-	// Basic structure we want:
-	// If leftTitle exists: ╭─ leftTitle ──...
-	// If rightTitle exists: ...── rightTitle ─╮
-
-	borderStyler := lipgloss.NewStyle().Foreground(borderColor)
-	var topBorder string
-
-	// Case 1: Both Titles
-	if leftTitle != "" && rightTitle != "" {
-		remainingWidth := innerWidth - leftTitleWidth - rightTitleWidth - 1 // 1 for the start dash
-		if remainingWidth < 1 {
-			remainingWidth = 1 // overflow mitigation (might break layout but prevents crash)
-		}
-
-		topBorder = borderStyler.Render(topLeft+horizontal) +
-			leftTitle +
-			borderStyler.Render(strings.Repeat(horizontal, remainingWidth)) +
-			rightTitle +
-			borderStyler.Render(topRight)
-
-	} else if leftTitle != "" {
-		// Case 2: Only Left Title
-		remainingWidth := innerWidth - leftTitleWidth - 1
-		if remainingWidth < 0 {
-			remainingWidth = 0
-		}
-
-		topBorder = borderStyler.Render(topLeft+horizontal) +
-			leftTitle +
-			borderStyler.Render(strings.Repeat(horizontal, remainingWidth)+topRight)
-
-	} else if rightTitle != "" {
-		// Case 3: Only Right Title
-		remainingWidth := innerWidth - rightTitleWidth - 1
-		if remainingWidth < 0 {
-			remainingWidth = 0
-		}
-
-		topBorder = borderStyler.Render(topLeft+strings.Repeat(horizontal, remainingWidth)) +
-			rightTitle +
-			borderStyler.Render(horizontal+topRight)
-
-	} else {
-		// Case 4: No Title
-		topBorder = borderStyler.Render(topLeft + strings.Repeat(horizontal, innerWidth) + topRight)
-	}
-
-	// Build bottom border: ╰───────────────────╯
-	bottomBorder := lipgloss.NewStyle().Foreground(borderColor).Render(
-		bottomLeft + strings.Repeat(horizontal, innerWidth) + bottomRight,
-	)
-
-	// Style for vertical borders
-	borderStyle := lipgloss.NewStyle().Foreground(borderColor)
-
-	// Wrap content lines with vertical borders
-	contentLines := strings.Split(content, "\n")
-	innerHeight := height - 2 // Account for top and bottom borders
-
-	var wrappedLines []string
-	for i := 0; i < innerHeight; i++ {
-		var line string
-		if i < len(contentLines) {
-			line = contentLines[i]
-		} else {
-			line = ""
-		}
-		// Pad or truncate line to fit innerWidth
-		lineWidth := lipgloss.Width(line)
-		if lineWidth < innerWidth {
-			line = line + strings.Repeat(" ", innerWidth-lineWidth)
-		} else if lineWidth > innerWidth {
-			// Truncate (simplified - just take first innerWidth chars)
-			runes := []rune(line)
-			if len(runes) > innerWidth {
-				line = string(runes[:innerWidth])
-			}
-		}
-		wrappedLines = append(wrappedLines, borderStyle.Render(vertical)+line+borderStyle.Render(vertical))
-	}
-
-	return lipgloss.JoinVertical(lipgloss.Left, topBorder, strings.Join(wrappedLines, "\n"), bottomBorder)
+	return components.RenderBtopBox(leftTitle, rightTitle, content, width, height, borderColor)
 }

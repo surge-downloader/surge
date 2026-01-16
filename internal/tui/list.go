@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/junaid2005p/surge/internal/tui/components"
 	"github.com/junaid2005p/surge/internal/utils"
 
 	"github.com/charmbracelet/bubbles/key"
@@ -24,35 +25,9 @@ func (i DownloadItem) Title() string {
 func (i DownloadItem) Description() string {
 	d := i.download
 
-	// Build status indicator with semantic colors
-	var statusIcon, status string
-	var stateColor lipgloss.Color
-
-	switch {
-	case d.err != nil:
-		statusIcon = "✖"
-		status = "Error"
-		stateColor = ColorStateError // 🔴 Red
-	case d.done:
-		statusIcon = "✔"
-		status = "Completed"
-		stateColor = ColorStateDone // 🔵 Purple
-	case d.paused:
-		statusIcon = "⏸"
-		status = "Paused"
-		stateColor = ColorStatePaused // 🟡 Orange
-	case d.Speed == 0 && d.Downloaded == 0:
-		statusIcon = "⋯"
-		status = "Queued"
-		stateColor = ColorStatePaused // 🟡 Orange
-	default:
-		statusIcon = "⬇"
-		status = "Downloading"
-		stateColor = ColorStateDownloading // 🟢 Green
-	}
-
-	// Style the status with semantic color
-	styledStatus := lipgloss.NewStyle().Foreground(stateColor).Render(statusIcon + " " + status)
+	// Get styled status using the shared component
+	status := components.DetermineStatus(d.done, d.paused, d.err != nil, d.Speed, d.Downloaded)
+	styledStatus := status.Render()
 
 	// Build progress info
 	pct := 0.0

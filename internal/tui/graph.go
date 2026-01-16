@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/junaid2005p/surge/internal/utils"
+
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -160,7 +162,7 @@ func overlayStatsBox(graph string, stats *GraphStats, width, height int) string 
 		fmt.Sprintf("%s %s %s",
 			labelStyle.Render("▼"),
 			labelStyle.Render("Total:"),
-			valueStyle.Render(formatBytes(stats.DownloadTotal)),
+			valueStyle.Render(utils.ConvertBytesToHumanReadable(stats.DownloadTotal)),
 		),
 	}
 
@@ -195,27 +197,4 @@ func overlayStatsBox(graph string, stats *GraphStats, width, height int) string 
 	}
 
 	return strings.Join(graphLines, "\n")
-}
-
-// formatBytes formats bytes into human readable string
-func formatBytes(bytes int64) string {
-	const (
-		KB = 1024
-		MB = KB * 1024
-		GB = MB * 1024
-		TB = GB * 1024
-	)
-
-	switch {
-	case bytes >= TB:
-		return fmt.Sprintf("%.2f TB", float64(bytes)/TB)
-	case bytes >= GB:
-		return fmt.Sprintf("%.2f GB", float64(bytes)/GB)
-	case bytes >= MB:
-		return fmt.Sprintf("%.2f MB", float64(bytes)/MB)
-	case bytes >= KB:
-		return fmt.Sprintf("%.2f KB", float64(bytes)/KB)
-	default:
-		return fmt.Sprintf("%d B", bytes)
-	}
 }

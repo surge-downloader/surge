@@ -318,3 +318,10 @@ func (m RootModel) getFilteredDownloads() []*DownloadModel {
 	}
 	return filtered
 }
+
+// resetFilepicker resets the filepicker to default directory-only mode
+func (m *RootModel) resetFilepicker() {
+	m.filepicker.FileAllowed = false
+	m.filepicker.DirAllowed = true
+	m.filepicker.AllowedTypes = nil
+}
