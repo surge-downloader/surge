@@ -3,7 +3,6 @@ module github.com/surge-downloader/surge
 go 1.24.4
 
 require (
-	github.com/cavaliergopher/grab/v3 v3.0.1
 	github.com/charmbracelet/bubbles v0.21.0
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/lipgloss v1.1.0
