@@ -211,7 +211,7 @@ func (m RootModel) View() string {
 		Width(logoWidth - 4).
 		Align(lipgloss.Center).
 		Render(greenDot + serverText)
-	serverBox := renderBtopBox("", PaneTitleStyle.Render(" Server "), serverPortContent, logoWidth, serverBoxHeight, ColorDarkGray)
+	serverBox := renderBtopBox("", PaneTitleStyle.Render(" Server "), serverPortContent, logoWidth, serverBoxHeight, ColorGray)
 
 	// Combine logo and server box vertically
 	logoColumn := lipgloss.JoinVertical(lipgloss.Left, logoBox, serverBox)
@@ -222,7 +222,7 @@ func (m RootModel) View() string {
 	logContent := m.logViewport.View()
 
 	// Use different border color when focused
-	logBorderColor := ColorLightGray
+	logBorderColor := ColorGray
 	if m.logFocused {
 		logBorderColor = ColorNeonPink
 	}
@@ -428,7 +428,7 @@ func (m RootModel) View() string {
 	// Determine border color for downloads box based on focus
 	downloadsBorderColor := ColorNeonPink
 	if m.logFocused {
-		downloadsBorderColor = ColorDarkGray
+		downloadsBorderColor = ColorGray
 	}
 	listBox := renderBtopBox(leftTitle, PaneTitleStyle.Render(" Downloads "), listInner, leftWidth, listHeight, downloadsBorderColor)
 
@@ -441,7 +441,7 @@ func (m RootModel) View() string {
 			lipgloss.NewStyle().Foreground(ColorNeonCyan).Render("No Download Selected"))
 	}
 
-	detailBox := renderBtopBox("", PaneTitleStyle.Render(" File Details "), detailContent, rightWidth, detailHeight, ColorLightGray)
+	detailBox := renderBtopBox("", PaneTitleStyle.Render(" File Details "), detailContent, rightWidth, detailHeight, ColorGray)
 
 	// --- ASSEMBLY ---
 
