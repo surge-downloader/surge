@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/surge-downloader/surge/internal/clipboard"
 	"github.com/surge-downloader/surge/internal/config"
 	"github.com/surge-downloader/surge/internal/download/state"
 	"github.com/surge-downloader/surge/internal/download/types"
@@ -219,6 +220,7 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.startDownload(msg.URL, path, msg.Filename)
 
 	case messages.DownloadStartedMsg:
+
 		// Find the download and update with real metadata + start polling
 		for _, d := range m.downloads {
 			if d.ID == msg.DownloadID {
@@ -544,7 +546,6 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if key.Matches(msg, m.keys.Dashboard.Add) {
 				m.state = InputState
 				m.focusedInput = 0
-				m.inputs[0].SetValue("")
 				m.inputs[0].Focus()
 				// Use default download dir from settings
 				defaultDir := m.Settings.General.DefaultDownloadDir
@@ -555,6 +556,17 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.inputs[1].Blur()
 				m.inputs[2].SetValue("")
 				m.inputs[2].Blur()
+
+				// Check clipboard for URL if setting is enabled
+				if m.Settings.General.ClipboardMonitor {
+					if url := clipboard.ReadURL(); url != "" {
+						m.inputs[0].SetValue(url)
+					} else {
+						m.inputs[0].SetValue("")
+					}
+				} else {
+					m.inputs[0].SetValue("")
+				}
 				return m, nil
 			}
 

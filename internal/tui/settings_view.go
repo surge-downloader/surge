@@ -167,6 +167,8 @@ func (m RootModel) getSettingsValues(category string) map[string]interface{} {
 		values["auto_resume"] = m.Settings.General.AutoResume
 		values["skip_update_check"] = m.Settings.General.SkipUpdateCheck
 		values["max_concurrent_downloads"] = m.Settings.General.MaxConcurrentDownloads
+		values["clipboard_monitor"] = m.Settings.General.ClipboardMonitor
+
 	case "Connections":
 		values["max_connections_per_host"] = m.Settings.Connections.MaxConnectionsPerHost
 		values["max_global_connections"] = m.Settings.Connections.MaxGlobalConnections
@@ -226,6 +228,8 @@ func (m *RootModel) setGeneralSetting(key, value, typ string) error {
 		m.Settings.General.AutoResume = !m.Settings.General.AutoResume
 	case "skip_update_check":
 		m.Settings.General.SkipUpdateCheck = !m.Settings.General.SkipUpdateCheck
+	case "clipboard_monitor":
+		m.Settings.General.ClipboardMonitor = !m.Settings.General.ClipboardMonitor
 	case "max_concurrent_downloads":
 		if v, err := strconv.Atoi(value); err == nil {
 			if v < 1 {
@@ -475,7 +479,10 @@ func (m *RootModel) resetSettingToDefault(category, key string, defaults *config
 			m.Settings.General.SkipUpdateCheck = defaults.General.SkipUpdateCheck
 		case "max_concurrent_downloads":
 			m.Settings.General.MaxConcurrentDownloads = defaults.General.MaxConcurrentDownloads
+		case "clipboard_monitor":
+			m.Settings.General.ClipboardMonitor = defaults.General.ClipboardMonitor
 		}
+
 	case "Connections":
 		switch key {
 		case "max_connections_per_host":
