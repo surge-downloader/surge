@@ -42,11 +42,6 @@ func (m RootModel) viewSettings() string {
 	}
 	tabBar := components.RenderNumberedTabBar(tabs, m.SettingsActiveTab, ActiveTabStyle, TabStyle)
 
-	// Add subtle divider below tab bar
-	tabDivider := lipgloss.NewStyle().
-		Foreground(ColorGray).
-		Render(strings.Repeat("─", width-6))
-
 	// === CONTENT AREA ===
 	currentCategory := categories[m.SettingsActiveTab]
 	settingsMeta := metadata[currentCategory]
@@ -165,16 +160,18 @@ func (m RootModel) viewSettings() string {
 	content := lipgloss.JoinHorizontal(lipgloss.Top, listBox, rightBox)
 
 	// === HELP TEXT using Bubbles help ===
-	helpText := m.help.View(m.keys.Settings)
+	helpStyle := lipgloss.NewStyle().
+		Foreground(ColorGray).
+		Width(width - 6).
+		Align(lipgloss.Center)
+	helpText := helpStyle.Render(m.help.View(m.keys.Settings))
 
 	// === FINAL ASSEMBLY ===
 	fullContent := lipgloss.JoinVertical(lipgloss.Left,
 		"",
 		tabBar,
-		tabDivider,
 		"",
 		content,
-		"",
 		helpText,
 	)
 
