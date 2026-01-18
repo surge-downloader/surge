@@ -13,17 +13,11 @@ type Tab struct {
 }
 
 // RenderTabBar renders a horizontal tab bar with the given tabs
+// Each tab is wrapped in a rounded border box for consistent styling
 // activeIndex specifies which tab is currently active (0-indexed)
 func RenderTabBar(tabs []Tab, activeIndex int, activeStyle, inactiveStyle lipgloss.Style) string {
 	var rendered []string
 	for i, t := range tabs {
-		var style lipgloss.Style
-		if i == activeIndex {
-			style = activeStyle
-		} else {
-			style = inactiveStyle
-		}
-
 		var label string
 		if t.Count >= 0 {
 			label = fmt.Sprintf("%s (%d)", t.Label, t.Count)
@@ -31,7 +25,23 @@ func RenderTabBar(tabs []Tab, activeIndex int, activeStyle, inactiveStyle lipglo
 			label = t.Label
 		}
 
-		rendered = append(rendered, style.Render(label))
+		var tabStyle lipgloss.Style
+		if i == activeIndex {
+			tabStyle = lipgloss.NewStyle().
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(activeStyle.GetForeground()).
+				Foreground(activeStyle.GetForeground()).
+				Padding(0, 1).
+				Bold(true)
+		} else {
+			tabStyle = lipgloss.NewStyle().
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(inactiveStyle.GetForeground()).
+				Foreground(inactiveStyle.GetForeground()).
+				Padding(0, 1)
+		}
+
+		rendered = append(rendered, tabStyle.Render(label))
 	}
 	return lipgloss.JoinHorizontal(lipgloss.Top, rendered...)
 }
@@ -41,7 +51,12 @@ func RenderTabBar(tabs []Tab, activeIndex int, activeStyle, inactiveStyle lipglo
 func RenderNumberedTabBar(tabs []Tab, activeIndex int, activeStyle, inactiveStyle lipgloss.Style) string {
 	var rendered []string
 	for i, t := range tabs {
-		label := fmt.Sprintf("[%d] %s", i+1, t.Label)
+		var label string
+		if t.Count >= 0 {
+			label = fmt.Sprintf("[%d] %s (%d)", i+1, t.Label, t.Count)
+		} else {
+			label = fmt.Sprintf("[%d] %s", i+1, t.Label)
+		}
 
 		var tabStyle lipgloss.Style
 		if i == activeIndex {
