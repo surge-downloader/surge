@@ -15,9 +15,15 @@ import (
 
 // viewSettings renders the Btop-style settings page
 func (m RootModel) viewSettings() string {
-	// Larger, more spacious modal size
-	width := 100
-	height := 22
+	// Larger, more spacious modal size (responsive to terminal width)
+	width := int(float64(m.width) * 0.65) // 65% of terminal width
+	if width < 90 {
+		width = 90
+	}
+	if width > 120 {
+		width = 120
+	}
+	height := 24
 	if m.width < width+4 {
 		width = m.width - 4
 	}
@@ -49,7 +55,7 @@ func (m RootModel) viewSettings() string {
 	settingsValues := m.getSettingsValues(currentCategory)
 
 	// Calculate column widths - give left panel more room
-	leftWidth := 30
+	leftWidth := 32
 	rightWidth := width - leftWidth - 8
 
 	// === LEFT COLUMN: Settings List (names only) ===
@@ -88,7 +94,7 @@ func (m RootModel) viewSettings() string {
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(ColorGray).
 		Width(leftWidth).
-		Padding(1, 2).
+		Padding(1, 1).
 		Render(listContent)
 
 	// === RIGHT COLUMN: Value + Description ===
