@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/surge-downloader/surge/internal/config"
 	"github.com/surge-downloader/surge/internal/download"
 	"github.com/surge-downloader/surge/internal/messages"
 	"github.com/surge-downloader/surge/internal/utils"
@@ -98,7 +99,15 @@ func runHeadless(ctx context.Context, url, outPath string, verbose bool) error {
 		}
 	}
 
-	return <-errCh
+	err := <-errCh
+	if err == nil {
+		elapsed := time.Since(startTime)
+		speed := float64(totalSize) / elapsed.Seconds() / (1024 * 1024)
+		fmt.Fprintf(os.Stderr, "Complete: %s in %s (%.2f MB/s)\n",
+			utils.ConvertBytesToHumanReadable(totalSize),
+			elapsed.Round(time.Millisecond), speed)
+	}
+	return err
 }
 
 // sendToServer sends a download request to a running surge server
@@ -133,7 +142,6 @@ var getCmd = &cobra.Command{
 	Short: "Download a file in headless mode or send to running server",
 	Long: `Download a file from a URL without the TUI interface.
 
-Use --headless for CLI-only downloads (useful for scripting).
 Use --port to send the download to a running Surge instance.
 Use --batch to download multiple URLs from a file (one URL per line).`,
 	Args: cobra.MaximumNArgs(1),
@@ -181,9 +189,22 @@ Use --batch to download multiple URLs from a file (one URL per line).`,
 		}
 
 		if outPath == "" && port == 0 {
-			// Only default to "." for headless mode.
-			// For server mode (port > 0), send empty path so TUI uses its default.
-			outPath = "."
+			// Try to load default download directory from settings
+			settings, err := config.LoadSettings()
+			if err == nil && settings.General.DefaultDownloadDir != "" {
+				outPath = settings.General.DefaultDownloadDir
+				// Create directory if it doesn't exist
+				if err := os.MkdirAll(outPath, 0755); err != nil {
+					// If creation fails, fallback to current directory
+					outPath = "."
+				}
+			} else {
+				// Fallback to current directory
+				outPath = "."
+			}
+		} else if outPath == "" && port > 0 {
+			// For server mode, send empty path so server/TUI uses its default
+			outPath = ""
 		}
 
 		// Process each URL

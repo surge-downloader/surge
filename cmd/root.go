@@ -1,19 +1,26 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
+	"time"
 
 	"github.com/surge-downloader/surge/internal/config"
+	"github.com/surge-downloader/surge/internal/download"
+	"github.com/surge-downloader/surge/internal/messages"
 	"github.com/surge-downloader/surge/internal/tui"
 	"github.com/surge-downloader/surge/internal/utils"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 )
 
@@ -33,27 +40,59 @@ var rootCmd = &cobra.Command{
 	Long:    `Surge is a blazing fast, open-source terminal (TUI) download manager built in Go.`,
 	Version: Version,
 	Run: func(cmd *cobra.Command, args []string) {
-		// Find an available port starting from default
-		port, listener := findAvailablePort(8080)
-		if listener == nil {
-			fmt.Fprintf(os.Stderr, "Error: could not find available port\n")
-			os.Exit(1)
+		headless, _ := cmd.Flags().GetBool("headless")
+		portFlag, _ := cmd.Flags().GetInt("port")
+
+		var port int
+		var listener net.Listener
+		var err error
+
+		if portFlag > 0 {
+			// Strict port mode
+			port = portFlag
+			listener, err = net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error: could not bind to port %d: %v\n", port, err)
+				os.Exit(1)
+			}
+		} else {
+			// Auto-discovery mode
+			port, listener = findAvailablePort(8080)
+			if listener == nil {
+				fmt.Fprintf(os.Stderr, "Error: could not find available port\n")
+				os.Exit(1)
+			}
 		}
 
 		// Save port for browser extension to discover
 		saveActivePort(port)
 
-		// Create TUI program
-		model := tui.InitialRootModel(port, Version)
-		serverProgram = tea.NewProgram(model, tea.WithAltScreen())
+		outputDir, _ := cmd.Flags().GetString("output")
 
 		// Start HTTP server in background (reuse the listener)
-		go startHTTPServer(listener, port)
+		go startHTTPServer(listener, port, outputDir)
 
-		// Run the TUI (blocking)
-		if _, err := serverProgram.Run(); err != nil {
-			fmt.Printf("Error: %v\n", err)
-			os.Exit(1)
+		if headless {
+			fmt.Printf("Surge %s running in headless mode.\n", Version)
+			fmt.Printf("HTTP server listening on port %d\n", port)
+			fmt.Println("Press Ctrl+C to exit.")
+
+			// Block until signal
+			sigChan := make(chan os.Signal, 1)
+			signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+			<-sigChan
+
+			fmt.Println("\nShutting down...")
+		} else {
+			// Create TUI program
+			model := tui.InitialRootModel(port, Version)
+			serverProgram = tea.NewProgram(model, tea.WithAltScreen())
+
+			// Run the TUI (blocking)
+			if _, err := serverProgram.Run(); err != nil {
+				fmt.Printf("Error: %v\n", err)
+				os.Exit(1)
+			}
 		}
 
 		// Cleanup port file on exit
@@ -86,7 +125,7 @@ func removeActivePort() {
 }
 
 // startHTTPServer starts the HTTP server using an existing listener
-func startHTTPServer(ln net.Listener, port int) {
+func startHTTPServer(ln net.Listener, port int, defaultOutputDir string) {
 	mux := http.NewServeMux()
 
 	// Health check endpoint
@@ -99,7 +138,9 @@ func startHTTPServer(ln net.Listener, port int) {
 	})
 
 	// Download endpoint
-	mux.HandleFunc("/download", handleDownload)
+	mux.HandleFunc("/download", func(w http.ResponseWriter, r *http.Request) {
+		handleDownload(w, r, defaultOutputDir)
+	})
 
 	server := &http.Server{Handler: corsMiddleware(mux)}
 	if err := server.Serve(ln); err != nil && err != http.ErrServerClosed {
@@ -120,7 +161,7 @@ type DownloadRequest struct {
 	Path     string `json:"path,omitempty"`
 }
 
-func handleDownload(w http.ResponseWriter, r *http.Request) {
+func handleDownload(w http.ResponseWriter, r *http.Request, defaultOutputDir string) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -158,7 +199,77 @@ func handleDownload(w http.ResponseWriter, r *http.Request) {
 
 	utils.Debug("Received download request: URL=%s, Path=%s", req.URL, req.Path)
 
-	// Send message to TUI to start download
+	// HEADLESS MODE: If serverProgram is nil, we are running without TUI.
+	if serverProgram == nil {
+		go func() {
+			// For headless, default to settings or current directory if not specified
+			outPath := req.Path
+			if outPath == "" {
+				if defaultOutputDir != "" {
+					outPath = defaultOutputDir
+					_ = os.MkdirAll(outPath, 0755)
+				} else {
+					settings, err := config.LoadSettings()
+					if err == nil && settings.General.DefaultDownloadDir != "" {
+						outPath = settings.General.DefaultDownloadDir
+						// Create directory if it doesn't exist
+						_ = os.MkdirAll(outPath, 0755)
+					} else {
+						outPath = "."
+					}
+				}
+			}
+
+			fmt.Printf("Starting headless download: %s -> %s\n", req.URL, outPath)
+			ctx := context.Background()
+
+			// Struct for stats
+			var totalSize int64
+			startTime := time.Now()
+
+			// Create a channel effectively to ignore events or log them
+			eventCh := make(chan tea.Msg, 10)
+			errCh := make(chan error, 1)
+
+			// Run download in background
+			go func() {
+				err := download.Download(ctx, req.URL, outPath, false, eventCh, uuid.New().String())
+				errCh <- err
+				close(eventCh)
+			}()
+
+			// Process events (blocking until eventCh is closed)
+			for msg := range eventCh {
+				switch m := msg.(type) {
+				case messages.DownloadStartedMsg:
+					totalSize = m.Total
+					startTime = time.Now() // Reset start time (after probe)
+					fmt.Printf("Downloading: %s (%s)\n", m.Filename, utils.ConvertBytesToHumanReadable(totalSize))
+				case messages.DownloadErrorMsg:
+					fmt.Printf("Download error for %s: %v\n", req.URL, m.Err)
+				}
+			}
+
+			// Check final result
+			if err := <-errCh; err != nil {
+				fmt.Printf("Download failed: %v\n", err)
+			} else {
+				elapsed := time.Since(startTime)
+				speed := float64(totalSize) / elapsed.Seconds() / (1024 * 1024)
+				fmt.Printf("Download complete: %s in %s (%.2f MB/s)\n",
+					req.URL, elapsed.Round(time.Millisecond), speed)
+			}
+		}()
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{
+			"status":  "started",
+			"message": "Download started in background (headless)",
+		})
+		return
+	}
+
+	// TUI MODE: Send message to TUI to start download
 	serverProgram.Send(tui.StartDownloadMsg{
 		URL:      req.URL,
 		Path:     req.Path,
@@ -181,5 +292,8 @@ func Execute() {
 
 func init() {
 	rootCmd.AddCommand(getCmd)
+	rootCmd.Flags().Bool("headless", false, "Run in headless mode (no TUI)")
+	rootCmd.Flags().IntP("port", "p", 0, "Port to listen on (default: 8080 or first available)")
+	rootCmd.Flags().StringP("output", "o", "", "Default output directory (headless mode only)")
 	rootCmd.SetVersionTemplate("Surge version {{.Version}}\n")
 }
