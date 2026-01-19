@@ -1,6 +1,9 @@
 package components
 
 import (
+	"fmt"
+	"time"
+
 	"github.com/surge-downloader/surge/internal/tui/colors"
 
 	"github.com/charmbracelet/lipgloss"
@@ -15,6 +18,7 @@ const (
 	StatusPaused
 	StatusComplete
 	StatusError
+	StatusRateLimited
 )
 
 // statusInfo holds the display properties for each status
@@ -30,6 +34,7 @@ var statusMap = map[DownloadStatus]statusInfo{
 	StatusPaused:      {"⏸", "Paused", colors.StatePaused},
 	StatusComplete:    {"✔", "Completed", colors.StateDone},
 	StatusError:       {"✖", "Error", colors.StateError},
+	StatusRateLimited: {"⚠", "Rate Limited", colors.Warning},
 }
 
 // Icon returns the status icon
@@ -62,6 +67,19 @@ func (s DownloadStatus) Render() string {
 	return lipgloss.NewStyle().Foreground(info.color).Render(info.icon + " " + info.label)
 }
 
+// RenderWithCountdown returns the styled status with a countdown for rate limiting
+func (s DownloadStatus) RenderWithCountdown(rateLimitedUntil time.Time) string {
+	info := statusMap[s]
+	if s == StatusRateLimited && !rateLimitedUntil.IsZero() {
+		remaining := time.Until(rateLimitedUntil).Round(time.Second)
+		if remaining > 0 {
+			label := fmt.Sprintf("%s (Wait %s)", info.label, remaining)
+			return lipgloss.NewStyle().Foreground(info.color).Render(info.icon + " " + label)
+		}
+	}
+	return lipgloss.NewStyle().Foreground(info.color).Render(info.icon + " " + info.label)
+}
+
 // RenderIcon returns just the styled icon
 func (s DownloadStatus) RenderIcon() string {
 	info := statusMap[s]
@@ -70,7 +88,7 @@ func (s DownloadStatus) RenderIcon() string {
 
 // DetermineStatus determines the DownloadStatus based on download state
 // This centralizes the status determination logic that was duplicated in view.go and list.go
-func DetermineStatus(done bool, paused bool, hasError bool, speed float64, downloaded int64) DownloadStatus {
+func DetermineStatus(done bool, paused bool, hasError bool, speed float64, downloaded int64, rateLimitedUntil time.Time) DownloadStatus {
 	switch {
 	case hasError:
 		return StatusError
@@ -78,6 +96,8 @@ func DetermineStatus(done bool, paused bool, hasError bool, speed float64, downl
 		return StatusComplete
 	case paused:
 		return StatusPaused
+	case !rateLimitedUntil.IsZero() && time.Now().Before(rateLimitedUntil):
+		return StatusRateLimited
 	case speed == 0 && downloaded == 0:
 		return StatusQueued
 	default:

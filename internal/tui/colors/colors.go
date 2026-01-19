@@ -20,6 +20,7 @@ var (
 	StatePaused      = lipgloss.Color("#ffb86c") // 🟡 Orange - Paused/Queued
 	StateDownloading = lipgloss.Color("#50fa7b") // 🟢 Green - Downloading
 	StateDone        = lipgloss.Color("#bd93f9") // 🔵 Purple - Completed
+	Warning          = lipgloss.Color("#f1fa8c") // 🟡 Yellow - Rate Limited/Warning
 )
 
 // === Progress Bar Colors ===
