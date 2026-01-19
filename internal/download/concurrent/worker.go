@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/surge-downloader/surge/internal/download/limiter"
 	"github.com/surge-downloader/surge/internal/download/types"
 	"github.com/surge-downloader/surge/internal/utils"
 )
@@ -43,7 +44,7 @@ func (d *ConcurrentDownloader) worker(ctx context.Context, id int, rawurl string
 			if attempt > 0 {
 				// Check if last error was a rate limit - use its wait duration
 				// Rate limit errors don't count against retry limit
-				var rateLimitErr *RateLimitError
+				var rateLimitErr *limiter.RateLimitError
 				if errors.As(lastErr, &rateLimitErr) {
 					utils.Debug("Worker %d: rate limited, waiting %v before retry", id, rateLimitErr.WaitDuration)
 					time.Sleep(rateLimitErr.WaitDuration)
@@ -180,7 +181,7 @@ func (d *ConcurrentDownloader) downloadTask(ctx context.Context, rawurl string, 
 	if resp.StatusCode == http.StatusTooManyRequests {
 		if d.RateLimiter != nil {
 			waitDuration := d.RateLimiter.Handle429(resp)
-			return &RateLimitError{WaitDuration: waitDuration}
+			return &limiter.RateLimitError{WaitDuration: waitDuration}
 		}
 		return fmt.Errorf("rate limited (429)")
 	}

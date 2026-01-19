@@ -6,12 +6,14 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sync"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/surge-downloader/surge/internal/download/limiter"
 	"github.com/surge-downloader/surge/internal/download/state"
 	"github.com/surge-downloader/surge/internal/download/types"
 	"github.com/surge-downloader/surge/internal/utils"
@@ -35,7 +37,7 @@ type ConcurrentDownloader struct {
 	URL          string // For pause/resume
 	DestPath     string // For pause/resume
 	Runtime      *types.RuntimeConfig
-	RateLimiter  *RateLimiter // Global rate limiter for 429 handling
+	RateLimiter  *limiter.RateLimiter // Global rate limiter for 429 handling (set in Download)
 }
 
 // NewConcurrentDownloader creates a new concurrent downloader with all required parameters
@@ -46,7 +48,7 @@ func NewConcurrentDownloader(id string, progressCh chan<- tea.Msg, progState *ty
 		State:        progState,
 		activeTasks:  make(map[int]*ActiveTask),
 		Runtime:      runtime,
-		RateLimiter:  NewRateLimiter(),
+		// RateLimiter is set in Download() based on URL hostname
 	}
 }
 
@@ -164,6 +166,11 @@ func (d *ConcurrentDownloader) Download(ctx context.Context, rawurl, destPath st
 	// Store URL and path for pause/resume (final path without .surge)
 	d.URL = rawurl
 	d.DestPath = destPath
+
+	// Get global rate limiter for this host
+	if u, err := url.Parse(rawurl); err == nil {
+		d.RateLimiter = limiter.GetLimiter(u.Hostname())
+	}
 
 	// Working file has .surge suffix until download completes
 	workingPath := destPath + types.IncompleteSuffix
