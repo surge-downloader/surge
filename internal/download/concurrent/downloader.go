@@ -35,6 +35,7 @@ type ConcurrentDownloader struct {
 	URL          string // For pause/resume
 	DestPath     string // For pause/resume
 	Runtime      *types.RuntimeConfig
+	RateLimiter  *RateLimiter // Global rate limiter for 429 handling
 }
 
 // NewConcurrentDownloader creates a new concurrent downloader with all required parameters
@@ -45,6 +46,7 @@ func NewConcurrentDownloader(id string, progressCh chan<- tea.Msg, progState *ty
 		State:        progState,
 		activeTasks:  make(map[int]*ActiveTask),
 		Runtime:      runtime,
+		RateLimiter:  NewRateLimiter(),
 	}
 }
 

@@ -2,6 +2,7 @@ package concurrent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -40,7 +41,16 @@ func (d *ConcurrentDownloader) worker(ctx context.Context, id int, rawurl string
 		maxRetries := d.Runtime.GetMaxTaskRetries()
 		for attempt := 0; attempt < maxRetries; attempt++ {
 			if attempt > 0 {
-				time.Sleep(time.Duration(1<<attempt) * types.RetryBaseDelay) //Exponential backoff incase of failure
+				// Check if last error was a rate limit - use its wait duration
+				// Rate limit errors don't count against retry limit
+				var rateLimitErr *RateLimitError
+				if errors.As(lastErr, &rateLimitErr) {
+					utils.Debug("Worker %d: rate limited, waiting %v before retry", id, rateLimitErr.WaitDuration)
+					time.Sleep(rateLimitErr.WaitDuration)
+					attempt-- // Don't count rate limit retries against the limit
+				} else {
+					time.Sleep(time.Duration(1<<attempt) * types.RetryBaseDelay) // Exponential backoff for other errors
+				}
 			}
 
 			// Register active task with per-task cancellable context
@@ -145,6 +155,11 @@ func (d *ConcurrentDownloader) worker(ctx context.Context, id int, rawurl string
 
 // downloadTask downloads a single byte range and writes to file at offset
 func (d *ConcurrentDownloader) downloadTask(ctx context.Context, rawurl string, file *os.File, activeTask *ActiveTask, buf []byte, verbose bool, client *http.Client) error {
+	// Check if we're currently rate-limited before making request
+	if d.RateLimiter != nil {
+		d.RateLimiter.WaitIfBlocked()
+	}
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawurl, nil)
 	if err != nil {
 		return err
@@ -161,9 +176,18 @@ func (d *ConcurrentDownloader) downloadTask(ctx context.Context, rawurl string, 
 	}
 	defer resp.Body.Close()
 
-	// Handle rate limiting explicitly
+	// Handle rate limiting intelligently
 	if resp.StatusCode == http.StatusTooManyRequests {
+		if d.RateLimiter != nil {
+			waitDuration := d.RateLimiter.Handle429(resp)
+			return &RateLimitError{WaitDuration: waitDuration}
+		}
 		return fmt.Errorf("rate limited (429)")
+	}
+
+	// Report success to reset consecutive hit counter
+	if d.RateLimiter != nil {
+		d.RateLimiter.ReportSuccess()
 	}
 
 	if resp.StatusCode != http.StatusPartialContent && resp.StatusCode != http.StatusOK {
