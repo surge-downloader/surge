@@ -181,14 +181,21 @@ func (d *ConcurrentDownloader) downloadTask(ctx context.Context, rawurl string, 
 	if resp.StatusCode == http.StatusTooManyRequests {
 		if d.RateLimiter != nil {
 			waitDuration := d.RateLimiter.Handle429(resp)
+			// Update ProgressState for UI feedback
+			if d.State != nil {
+				d.State.SetRateLimited(d.RateLimiter.BlockedUntil())
+			}
 			return &limiter.RateLimitError{WaitDuration: waitDuration}
 		}
 		return fmt.Errorf("rate limited (429)")
 	}
 
-	// Report success to reset consecutive hit counter
+	// Report success to reset consecutive hit counter and clear UI
 	if d.RateLimiter != nil {
 		d.RateLimiter.ReportSuccess()
+		if d.State != nil {
+			d.State.ClearRateLimit()
+		}
 	}
 
 	if resp.StatusCode != http.StatusPartialContent && resp.StatusCode != http.StatusOK {

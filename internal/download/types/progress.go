@@ -19,7 +19,8 @@ type ProgressState struct {
 	CancelFunc    context.CancelFunc
 
 	SessionStartBytes int64      // SessionStartBytes tracks how many bytes were already downloaded when the current session started
-	mu                sync.Mutex // Protects TotalSize, StartTime, SessionStartBytes
+	RateLimitedUntil  time.Time  // When rate limiting expires (zero if not limited)
+	mu                sync.Mutex // Protects TotalSize, StartTime, SessionStartBytes, RateLimitedUntil
 }
 
 func NewProgressState(id string, totalSize int64) *ProgressState {
@@ -74,4 +75,33 @@ func (ps *ProgressState) Resume() {
 
 func (ps *ProgressState) IsPaused() bool {
 	return ps.Paused.Load()
+}
+
+// SetRateLimited sets the rate limit expiry time for UI feedback
+func (ps *ProgressState) SetRateLimited(until time.Time) {
+	ps.mu.Lock()
+	defer ps.mu.Unlock()
+	ps.RateLimitedUntil = until
+}
+
+// GetRateLimitedUntil returns when rate limiting expires.
+// Returns zero time if not rate limited.
+func (ps *ProgressState) GetRateLimitedUntil() time.Time {
+	ps.mu.Lock()
+	defer ps.mu.Unlock()
+	return ps.RateLimitedUntil
+}
+
+// IsRateLimited returns true if currently rate limited
+func (ps *ProgressState) IsRateLimited() bool {
+	ps.mu.Lock()
+	defer ps.mu.Unlock()
+	return !ps.RateLimitedUntil.IsZero() && time.Now().Before(ps.RateLimitedUntil)
+}
+
+// ClearRateLimit clears the rate limit status
+func (ps *ProgressState) ClearRateLimit() {
+	ps.mu.Lock()
+	defer ps.mu.Unlock()
+	ps.RateLimitedUntil = time.Time{}
 }
