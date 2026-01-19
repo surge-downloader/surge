@@ -698,7 +698,16 @@ func renderFocusedDetails(d *DownloadModel, w int) string {
 }
 
 func getDownloadStatus(d *DownloadModel) string {
-	status := components.DetermineStatus(d.done, d.paused, d.err != nil, d.Speed, d.Downloaded)
+	// Get rate limit time from state (nil-safe)
+	var rateLimitedUntil time.Time
+	if d.state != nil {
+		rateLimitedUntil = d.state.GetRateLimitedUntil()
+	}
+
+	status := components.DetermineStatus(d.done, d.paused, d.err != nil, d.Speed, d.Downloaded, rateLimitedUntil)
+	if status == components.StatusRateLimited {
+		return status.RenderWithCountdown(rateLimitedUntil)
+	}
 	return status.Render()
 }
 

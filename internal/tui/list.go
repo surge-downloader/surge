@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"io"
+	"time"
 
 	"github.com/surge-downloader/surge/internal/tui/components"
 	"github.com/surge-downloader/surge/internal/utils"
@@ -25,9 +26,20 @@ func (i DownloadItem) Title() string {
 func (i DownloadItem) Description() string {
 	d := i.download
 
+	// Get rate limit time from state (nil-safe)
+	var rateLimitedUntil time.Time
+	if d.state != nil {
+		rateLimitedUntil = d.state.GetRateLimitedUntil()
+	}
+
 	// Get styled status using the shared component
-	status := components.DetermineStatus(d.done, d.paused, d.err != nil, d.Speed, d.Downloaded)
-	styledStatus := status.Render()
+	status := components.DetermineStatus(d.done, d.paused, d.err != nil, d.Speed, d.Downloaded, rateLimitedUntil)
+	var styledStatus string
+	if status == components.StatusRateLimited {
+		styledStatus = status.RenderWithCountdown(rateLimitedUntil)
+	} else {
+		styledStatus = status.Render()
+	}
 
 	// Build progress info
 	pct := 0.0
