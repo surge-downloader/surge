@@ -1,0 +1,74 @@
+name: Benchmark
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  benchmark:
+    name: Run Benchmark
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Current Code
+        uses: actions/checkout@v4
+        with:
+          path: current
+
+      - name: Checkout Main Branch (Baseline)
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: baseline
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.4+auto'
+
+      - name: Install Aria2
+        run: sudo apt-get update && sudo apt-get install -y aria2
+
+      - name: Build Current
+        run: |
+          cd current
+          go build -o ../surge-current .
+
+      - name: Build Baseline
+        run: |
+          cd baseline
+          go build -o ../surge-baseline .
+
+      - name: Run Benchmark
+        id: benchmark
+        run: |
+          cd current
+          # Run benchmark and capture output to both console and file
+          python3 benchmark.py --surge-exec ../surge-current --surge-baseline ../surge-baseline --aria2 -n 3 | tee benchmark_output.txt
+          
+          # Read file content into environment variable for next step (handling multiline)
+          echo "BENCHMARK_RESULTS<<EOF" >> $GITHUB_ENV
+          cat benchmark_output.txt >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
+
+      - name: Comment Benchmark Results
+        uses: actions/github-script@v7
+        if: github.event_name == 'pull_request'
+        with:
+          script: |
+            const output = process.env.BENCHMARK_RESULTS;
+            const body = `## 🚀 Benchmark Results\n\n\`\`\`\n${output}\n\`\`\``;
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
+            })

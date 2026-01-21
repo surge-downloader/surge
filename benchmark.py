@@ -148,16 +148,14 @@ def check_aria2c() -> bool:
 # =============================================================================
 # BENCHMARK FUNCTIONS
 # =============================================================================
-def benchmark_surge(project_dir: Path, url: str, output_dir: Path) -> BenchmarkResult:
-    """Benchmark surge downloader."""
-    surge_bin = project_dir / f"surge{EXE_SUFFIX}"
-    
-    if not surge_bin.exists():
-        return BenchmarkResult("surge", False, 0, 0, f"Binary not found: {surge_bin}")
+def benchmark_surge(executable: Path, url: str, output_dir: Path, label: str = "surge") -> BenchmarkResult:
+    """Benchmark surge downloader using a specific executable."""
+    if not executable.exists():
+        return BenchmarkResult(label, False, 0, 0, f"Binary not found: {executable}")
     
     start = time.perf_counter()
     success, output = run_command([
-        str(surge_bin), "get", url,
+        str(executable), "get", url,
         "--output", str(output_dir),  # Download directory
     ], timeout=600)
     elapsed = time.perf_counter() - start
@@ -186,12 +184,9 @@ def benchmark_surge(project_dir: Path, url: str, output_dir: Path) -> BenchmarkR
             cleanup_file(f)
     
     if not success:
-        return BenchmarkResult("surge", False, actual_time, file_size, output[:200])
+        return BenchmarkResult(label, False, actual_time, file_size, output[:200])
     
-    return BenchmarkResult("surge", True, actual_time, file_size)
-
-
-
+    return BenchmarkResult(label, True, actual_time, file_size)
 
 
 def benchmark_aria2(url: str, output_dir: Path) -> BenchmarkResult:
@@ -223,9 +218,6 @@ def benchmark_aria2(url: str, output_dir: Path) -> BenchmarkResult:
         return BenchmarkResult("aria2c", False, elapsed, file_size, output[:200])
     
     return BenchmarkResult("aria2c", True, elapsed, file_size)
-
-
-
 
 
 def benchmark_wget(url: str, output_dir: Path) -> BenchmarkResult:
@@ -351,10 +343,14 @@ def main():
     parser.add_argument("-n", "--iterations", type=int, default=1, help="Number of iterations to run (default: 1)")
     
     # Service flags
-    parser.add_argument("--surge", action="store_true", help="Run Surge benchmark")
+    parser.add_argument("--surge", action="store_true", help="Run Surge benchmark (default build)")
     parser.add_argument("--aria2", action="store_true", help="Run aria2c benchmark")
     parser.add_argument("--wget", action="store_true", help="Run wget benchmark")
     parser.add_argument("--curl", action="store_true", help="Run curl benchmark")
+    
+    # Executable flags
+    parser.add_argument("--surge-exec", type=Path, help="Path to specific Surge executable to test")
+    parser.add_argument("--surge-baseline", type=Path, help="Path to baseline Surge executable for comparison")
     
     args = parser.parse_args()
     
@@ -362,7 +358,7 @@ def main():
     num_iterations = args.iterations
     
     # helper to check if any specific service was requested
-    specific_service_requested = any([args.surge, args.aria2, args.wget, args.curl])
+    specific_service_requested = any([args.surge, args.aria2, args.wget, args.curl, args.surge_exec, args.surge_baseline])
     
     print(f"\n  Test URL:   {test_url}")
     print(f"  Iterations: {num_iterations}")
@@ -387,14 +383,35 @@ def main():
 
         # Initialize all to False
         surge_ok, aria2_ok, wget_ok, curl_ok = False, False, False, False
+        surge_exec = None
+        surge_baseline_exec = None
         
         # --- Go dependent tools ---
-        if run_all or args.surge:
+        
+        # 1. Main Surge Executable
+        if args.surge_exec:
+            if args.surge_exec.exists():
+                print(f"  [OK] Using provided surge exec: {args.surge_exec}")
+                surge_exec = args.surge_exec.resolve()
+                surge_ok = True
+            else:
+                 print(f"  [X] Provided surge exec not found: {args.surge_exec}")
+        elif run_all or args.surge:
             if not which("go"):
                 print("  [X] Go is not installed. `surge` benchmark will be skipped.")
             else:
                 print("  [OK] Go found")
-                surge_ok = build_surge(project_dir)
+                if build_surge(project_dir):
+                    surge_exec = project_dir / f"surge{EXE_SUFFIX}"
+                    surge_ok = True
+        
+        # 2. Baseline Surge Executable
+        if args.surge_baseline:
+             if args.surge_baseline.exists():
+                print(f"  [OK] Using baseline surge exec: {args.surge_baseline}")
+                surge_baseline_exec = args.surge_baseline.resolve()
+             else:
+                print(f"  [X] Baseline surge exec not found: {args.surge_baseline}")
 
         # --- Aria2 ---
         if run_all or args.aria2:
@@ -410,25 +427,33 @@ def main():
         # Define benchmarks to run
         tasks = []
         
-        # Surge
-        if surge_ok and (not specific_service_requested or args.surge):
-            tasks.append({"name": "surge", "func": benchmark_surge, "args": (project_dir, test_url, download_dir)})
+        # Surge Main
+        if surge_ok:
+            tasks.append({"name": "surge (current)", "func": benchmark_surge, "args": (surge_exec, test_url, download_dir, "surge (current)")})
+        
+        # Surge Baseline
+        if surge_baseline_exec:
+             tasks.append({"name": "surge (baseline)", "func": benchmark_surge, "args": (surge_baseline_exec, test_url, download_dir, "surge (baseline)")})
         
         # aria2c
-        if aria2_ok and (not specific_service_requested or args.aria2):
+        if aria2_ok and (run_all or args.aria2):
             tasks.append({"name": "aria2c", "func": benchmark_aria2, "args": (test_url, download_dir)})
         
         # wget
-        if wget_ok and (not specific_service_requested or args.wget):
+        if wget_ok and (run_all or args.wget):
             tasks.append({"name": "wget", "func": benchmark_wget, "args": (test_url, download_dir)})
         
         # curl
-        if curl_ok and (not specific_service_requested or args.curl):
+        if curl_ok and (run_all or args.curl):
             tasks.append({"name": "curl", "func": benchmark_curl, "args": (test_url, download_dir)})
 
         # Initialize results storage
         # Map: tool_name -> list of BenchmarkResult
         raw_results: dict[str, list[BenchmarkResult]] = {task["name"]: [] for task in tasks}
+
+        if not tasks:
+            print("No benchmarks to run.")
+            return
 
         # Benchmark phase
         print("\nBENCHMARKING")
@@ -485,25 +510,6 @@ def main():
                 file_size_bytes=file_size,
                 iter_results=times
             ))
-
-        # Add skipped tools to results for completeness
-        # (Though current logic implies they aren't in 'tasks' if setup failed, 
-        # so maybe we just report on what ran. The previous code reported failures if build failed.
-        # Let's add explicit failures for tools that failed setup if we want to match exact behavior,
-        # but the request was specifically about interlacing.)
-        
-        # If we want to report originally failed tools (execution plan):
-        if (not specific_service_requested or args.surge) and not surge_ok:
-            final_results.append(BenchmarkResult("surge", False, 0, 0, "Build failed"))
-        if (not specific_service_requested or args.aria2) and not aria2_ok:
-            final_results.append(BenchmarkResult("aria2c", False, 0, 0, "Not installed"))
-        if (not specific_service_requested or args.wget) and not wget_ok:
-             final_results.append(BenchmarkResult("wget", False, 0, 0, "Not installed"))
-        if (not specific_service_requested or args.curl) and not curl_ok:
-             final_results.append(BenchmarkResult("curl", False, 0, 0, "Not installed"))
-
-        # sort results to keep somewhat consistent order or just trust append order? 
-        # The append order for failures is at the end. That's fine.
 
         # Print results
         print_results(final_results)
