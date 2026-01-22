@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import argparse
 import optuna
+import atexit
 from pathlib import Path
 
 # --- Configuration ---
@@ -13,6 +14,7 @@ CONFIG_FILE = Path("internal/download/types/config.go").resolve()
 BENCHMARK_SCRIPT = Path("benchmark.py").resolve()
 PROJECT_ROOT = Path(__file__).parent.parent.resolve()
 
+# Regex maps to find/replace values in Go code
 REGEX_MAP = {
     "MinChunk":     r"(MinChunk\s*=\s*)(.*)(  // Minimum chunk size)",
     "MaxChunk":     r"(MaxChunk\s*=\s*)(.*)( // Maximum chunk size)",
@@ -22,6 +24,32 @@ REGEX_MAP = {
     "PerHostMax":   r"(PerHostMax\s*=\s*)(.*)( // Max concurrent connections per host)",
 }
 
+# --- Network Emulation (The Magic Sauce) ---
+def setup_network_emulation(interface="eth0", rate="300mbit", delay="35ms"):
+    """
+    Uses Linux Traffic Control (tc) to simulate a home internet connection.
+    Requires sudo (available in GitHub Actions).
+    """
+    print(f"--- 🌐 Simulating Home Network: {rate} Bandwidth, {delay} Latency ---")
+    
+    # Clean up any existing rules first
+    subprocess.run(f"sudo tc qdisc del dev {interface} root", shell=True, stderr=subprocess.DEVNULL)
+    
+    # Apply NetEm (Network Emulation)
+    # limit 100000: Increases packet buffer so we don't drop packets just because of the delay
+    cmd = f"sudo tc qdisc add dev {interface} root netem rate {rate} delay {delay} limit 100000"
+    
+    res = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+    if res.returncode != 0:
+        print(f"⚠️ Failed to set network emulation: {res.stderr}")
+        print("   (This is expected if running locally without sudo. Tuning will run at full speed.)")
+    else:
+        print("✅ Network simulation active.")
+
+def teardown_network_emulation(interface="eth0"):
+    subprocess.run(f"sudo tc qdisc del dev {interface} root", shell=True, stderr=subprocess.DEVNULL)
+
+# --- Utils ---
 def run_command(cmd, timeout=600):
     try:
         res = subprocess.run(cmd, cwd=str(PROJECT_ROOT), capture_output=True, text=True, timeout=timeout)
@@ -40,7 +68,6 @@ def apply_config(params):
     CONFIG_FILE.write_text(content)
 
 def get_go_params(trial_params):
-    """Converts Optuna numbers back to Go syntax strings"""
     return {
         "MinChunk":     f"{trial_params['MinChunk_MB']} * MB",
         "MaxChunk":     f"{trial_params['MaxChunk_MB']} * MB",
@@ -66,7 +93,6 @@ def objective(trial):
         raise optuna.TrialPruned("MaxChunk < TargetChunk")
 
     # 3. Benchmark
-    # We backup inside the objective loop so every trial is isolated
     shutil.copy(CONFIG_FILE, str(CONFIG_FILE) + ".bak")
     try:
         params = get_go_params(trial.params)
@@ -81,7 +107,6 @@ def objective(trial):
         match = re.search(r"surge \(current\).*?│\s*([\d\.]+)\s*MB/s", out)
         return float(match.group(1)) if match else 0.0
     finally:
-        # Always restore after a trial so the next trial starts clean
         if Path(str(CONFIG_FILE) + ".bak").exists():
             shutil.copy(str(CONFIG_FILE) + ".bak", CONFIG_FILE)
 
@@ -90,6 +115,11 @@ def main():
     parser.add_argument("--trials", type=int, default=50)
     args = parser.parse_args()
     
+    # START NETWORK EMULATION
+    # Ensure we cleanup on exit
+    atexit.register(teardown_network_emulation)
+    setup_network_emulation()
+
     study = optuna.create_study(
         study_name="surge_tuning", 
         direction="maximize",
@@ -98,32 +128,17 @@ def main():
         sampler=optuna.samplers.TPESampler(seed=42)
     )
 
-    print("Injecting known best configuration (Warm Start)...")
-    study.enqueue_trial({
-        "MinChunk_MB": 1,
-        "MaxChunk_MB": 16,
-        "TargetChunk_MB": 16,
-        "WorkerBuffer_KB": 512,
-        "TasksPerWorker": 2,
-        "PerHostMax": 64
-    })
-
     print(f"Starting optimization with {args.trials} trials...")
     study.optimize(objective, n_trials=args.trials)
     
-    print(f"Best Speed: {study.best_value:.2f} MB/s")
+    print(f"Best Speed (on 300Mbps/35ms link): {study.best_value:.2f} MB/s")
     
-    # --- FINALIZATION ---
-    # Apply the winning configuration permanently (no backup needed)
     print("Applying best configuration to config.go...")
     best_params_go = get_go_params(study.best_params)
     apply_config(best_params_go)
     
-    # Cleanup artifacts
     if Path("surge-tuned").exists():
         os.remove("surge-tuned")
-    if Path(str(CONFIG_FILE) + ".bak").exists():
-        os.remove(str(CONFIG_FILE) + ".bak")
 
 if __name__ == "__main__":
     main()
