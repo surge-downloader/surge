@@ -1,0 +1,44 @@
+name: Tune Constants
+
+on:
+  workflow_dispatch:
+    inputs:
+      iterations:
+        description: 'Benchmark runs per validation'
+        required: false
+        default: '3'
+        type: string
+
+jobs:
+  tune:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.22'
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install Dependencies
+        run: |
+          # speedtest-cli might be needed if I enabled it, but purely local http server is better for stable benchmarking
+          # For now, benchmark.py downloads from hetzner. 
+          # Ensure wget/curl/aria2 are not strictly needed since we test surge-only.
+          pass
+
+      - name: Run Tuning Script
+        run: |
+          python3 scripts/tune.py --iterations ${{ inputs.iterations }}
+
+      - name: Upload Results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: tuning-results
+          path: tuning_results.csv
