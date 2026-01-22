@@ -2,12 +2,7 @@ name: Tune Constants
 
 on:
   workflow_dispatch:
-    inputs:
-      iterations:
-        description: "Benchmark runs per validation"
-        required: false
-        default: "3"
-        type: string
+
   pull_request:
     branches:
       - main
@@ -37,7 +32,7 @@ jobs:
 
       - name: Run Tuning Script
         run: |
-          python3 scripts/tune.py --iterations ${{ inputs.iterations }}
+          python3 scripts/tune.py --iterations 3
 
       - name: Upload Results
         uses: actions/upload-artifact@v4
