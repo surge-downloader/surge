@@ -21,18 +21,18 @@ const (
 
 // Chunk size constants for concurrent downloads
 const (
-	MinChunk     = 13 * MB  // Minimum chunk size
-	MaxChunk     = 68 * MB // Maximum chunk size
-	TargetChunk  = 57 * MB  // Target chunk size
+	MinChunk     = 16 * MB// Minimum chunk size
+	MaxChunk     = 64 * MB// Maximum chunk size
+	TargetChunk  = 32 * MB// Target chunk size
 	AlignSize    = 4 * KB  // Align chunks to 4KB for filesystem
-	WorkerBuffer = 864 * KB
+	WorkerBuffer = 192 * KB
 
-	TasksPerWorker = 1 // Target tasks per connection
+	TasksPerWorker = 40// Target tasks per connection
 )
 
 // Connection limits
 const (
-	PerHostMax = 71 // Max concurrent connections per host
+	PerHostMax = 40// Max concurrent connections per host
 )
 
 // HTTP Client Tuning
