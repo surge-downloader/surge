@@ -155,7 +155,7 @@ func TestSaveAndLoadSettings(t *testing.T) {
 			MinChunkSize:     1 * MB,
 			MaxChunkSize:     32 * MB,
 			TargetChunkSize:  16 * MB,
-			WorkerBufferSize: 256 * KB,
+			WorkerBufferSize: 256, // KB
 		},
 		Performance: PerformanceSettings{
 			MaxTaskRetries:        5,
@@ -307,7 +307,7 @@ func TestToRuntimeConfig(t *testing.T) {
 	if runtime.TargetChunkSize != settings.Chunks.TargetChunkSize {
 		t.Error("TargetChunkSize not correctly mapped")
 	}
-	if runtime.WorkerBufferSize != settings.Chunks.WorkerBufferSize {
+	if runtime.WorkerBufferSize != settings.Chunks.WorkerBufferSize*1024 {
 		t.Error("WorkerBufferSize not correctly mapped")
 	}
 	if runtime.MaxTaskRetries != settings.Performance.MaxTaskRetries {

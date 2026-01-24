@@ -7,7 +7,7 @@ import (
 )
 
 func TestNewTaskQueue(t *testing.T) {
-	q := NewTaskQueue()
+	q := NewTaskQueue(types.MinChunk)
 
 	if q == nil {
 		t.Fatal("NewTaskQueue returned nil")
@@ -21,7 +21,7 @@ func TestNewTaskQueue(t *testing.T) {
 }
 
 func TestTaskQueue_PushPop(t *testing.T) {
-	q := NewTaskQueue()
+	q := NewTaskQueue(types.MinChunk)
 
 	// Push a task
 	task := types.Task{Offset: 0, Length: 1000}
@@ -51,7 +51,7 @@ func TestTaskQueue_PushPop(t *testing.T) {
 }
 
 func TestTaskQueue_PushMultiple(t *testing.T) {
-	q := NewTaskQueue()
+	q := NewTaskQueue(types.MinChunk)
 
 	tasks := []types.Task{
 		{Offset: 0, Length: 1000},
@@ -66,7 +66,7 @@ func TestTaskQueue_PushMultiple(t *testing.T) {
 }
 
 func TestTaskQueue_Close(t *testing.T) {
-	q := NewTaskQueue()
+	q := NewTaskQueue(types.MinChunk)
 
 	// Start a goroutine waiting on Pop
 	done := make(chan struct{})
@@ -85,7 +85,7 @@ func TestTaskQueue_Close(t *testing.T) {
 }
 
 func TestTaskQueue_DrainRemaining(t *testing.T) {
-	q := NewTaskQueue()
+	q := NewTaskQueue(types.MinChunk)
 
 	tasks := []types.Task{
 		{Offset: 0, Length: 1000},
@@ -105,7 +105,7 @@ func TestTaskQueue_DrainRemaining(t *testing.T) {
 }
 
 func TestTaskQueue_SplitLargestIfNeeded(t *testing.T) {
-	q := NewTaskQueue()
+	q := NewTaskQueue(types.MinChunk)
 
 	// Add a task large enough to split (> 2*MinChunk)
 	largeTask := types.Task{Offset: 0, Length: 10 * types.MB} // 10MB, should be splittable
@@ -122,7 +122,7 @@ func TestTaskQueue_SplitLargestIfNeeded(t *testing.T) {
 }
 
 func TestTaskQueue_SplitLargestIfNeeded_TooSmall(t *testing.T) {
-	q := NewTaskQueue()
+	q := NewTaskQueue(types.MinChunk)
 
 	// Add a task too small to split (< 2*MinChunk)
 	smallTask := types.Task{Offset: 0, Length: types.MinChunk} // Exactly MinChunk, shouldn't split

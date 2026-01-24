@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/surge-downloader/surge/internal/download/types"
 )
 
 // Settings holds all user-configurable application settings organized by category.
@@ -121,10 +123,10 @@ func DefaultSettings() *Settings {
 			UserAgent:             "", // Empty means use default UA
 		},
 		Chunks: ChunkSettings{
-			MinChunkSize:     2 * MB,
-			MaxChunkSize:     16 * MB,
-			TargetChunkSize:  8 * MB,
-			WorkerBufferSize: 512 * KB,
+			MinChunkSize:     types.MinChunk,
+			MaxChunkSize:     types.MaxChunk,
+			TargetChunkSize:  types.TargetChunk,
+			WorkerBufferSize: types.WorkerBuffer / 1024, // KB for display/config JSON, converted back later
 		},
 		Performance: PerformanceSettings{
 			MaxTaskRetries:        3,
@@ -211,7 +213,7 @@ func (s *Settings) ToRuntimeConfig() *RuntimeConfig {
 		MinChunkSize:          s.Chunks.MinChunkSize,
 		MaxChunkSize:          s.Chunks.MaxChunkSize,
 		TargetChunkSize:       s.Chunks.TargetChunkSize,
-		WorkerBufferSize:      s.Chunks.WorkerBufferSize,
+		WorkerBufferSize:      s.Chunks.WorkerBufferSize * 1024, // Convert KB to Bytes
 		MaxTaskRetries:        s.Performance.MaxTaskRetries,
 		SlowWorkerThreshold:   s.Performance.SlowWorkerThreshold,
 		SlowWorkerGracePeriod: s.Performance.SlowWorkerGracePeriod,

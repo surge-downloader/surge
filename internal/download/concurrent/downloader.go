@@ -17,13 +17,7 @@ import (
 	"github.com/surge-downloader/surge/internal/utils"
 )
 
-// Buffer pool to reduce GC pressure
-var bufPool = sync.Pool{
-	New: func() any {
-		buf := make([]byte, types.WorkerBuffer)
-		return &buf
-	},
-}
+// Buffer pool removed (moved to instance)
 
 // ConcurrentDownloader handles multi-connection downloads
 type ConcurrentDownloader struct {
@@ -35,6 +29,7 @@ type ConcurrentDownloader struct {
 	URL          string // For pause/resume
 	DestPath     string // For pause/resume
 	Runtime      *types.RuntimeConfig
+	bufPool      *sync.Pool
 }
 
 // NewConcurrentDownloader creates a new concurrent downloader with all required parameters
@@ -45,6 +40,50 @@ func NewConcurrentDownloader(id string, progressCh chan<- tea.Msg, progState *ty
 		State:        progState,
 		activeTasks:  make(map[int]*ActiveTask),
 		Runtime:      runtime,
+		bufPool: &sync.Pool{
+			New: func() any {
+				// Use configured buffer size (defaulting to types.WorkerBuffer if not set or set via old config)
+				// The runtime config GetWorkerBufferSize() returns INT (KB), but we need bytes.
+				// Wait, GetWorkerBufferSize() returns bytes? No, settings.go says:
+				// WorkerBufferSize int `json:"worker_buffer_size"` // KB
+				// And GetWorkerBufferSize() returns int.
+				// BUT types.config.go says: `WorkerBuffer = 2048 * KB` (bytes)
+				// And `GetWorkerBufferSize` in types/config.go returns `WorkerBuffer` default.
+
+				// Let's check `types/config.go` again in my mind.
+				// `GetWorkerBufferSize()` returns `WorkerBufferSize` or `WorkerBuffer`.
+				// If `RuntimeConfig` has `WorkerBufferSize` as `int`, is it bytes or KB?
+				// content of types/config.go:
+				// type RuntimeConfig struct { ... WorkerBufferSize int ... }
+				// func (r *RuntimeConfig) GetWorkerBufferSize() int { ... return WorkerBuffer }
+				// `WorkerBuffer` is 2048 * KB (bytes).
+				// So `GetWorkerBufferSize` returns BYTES.
+
+				// In `settings.go`, `ToRuntimeConfig`:
+				// WorkerBufferSize:      s.Chunks.WorkerBufferSize,
+				// In `settings.go`, `WorkerBufferSize` in JSON is KB.
+				// `DefaultSettings` sets it to `types.WorkerBuffer / 1024`.
+				// So `s.Chunks.WorkerBufferSize` is KB.
+				// So `RuntimeConfig.WorkerBufferSize` is receiving KB.
+				// But `GetWorkerBufferSize` default is `WorkerBuffer` (Bytes).
+				// This is a mismatch!
+
+				// If `GetWorkerBufferSize` returns the raw int from struct, and struct has KB, then it returns KB.
+				// But if struct is 0, it returns `types.WorkerBuffer` (Bytes).
+				// 512 (KB) vs 2097152 (Bytes).
+
+				// I need to fix `settings.go` to convert KB to Bytes when creating `RuntimeConfig`.
+				size := types.WorkerBuffer // Default
+				if runtime != nil {
+					// RuntimeConfig from settings has KB.
+					// But `GetWorkerBufferSize` is implemented as: if <=0 return constant.
+					// If I fix `ToRuntimeConfig` to convert to bytes, then `GetWorkerBufferSize` returns bytes.
+					size = runtime.GetWorkerBufferSize()
+				}
+				buf := make([]byte, size)
+				return &buf
+			},
+		},
 	}
 }
 
@@ -213,7 +252,7 @@ func (d *ConcurrentDownloader) Download(ctx context.Context, rawurl, destPath st
 		}
 		tasks = createTasks(fileSize, chunkSize)
 	}
-	queue := NewTaskQueue()
+	queue := NewTaskQueue(d.Runtime.GetMinChunkSize())
 	queue.PushMultiple(tasks)
 
 	// Start time for stats

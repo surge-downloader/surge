@@ -9,16 +9,19 @@ import (
 
 // TaskQueue is a thread-safe work-stealing queue
 type TaskQueue struct {
-	tasks       []types.Task
-	head        int
-	mu          sync.Mutex
-	cond        *sync.Cond
-	done        bool
-	idleWorkers int64 // Atomic counter for idle workers
+	tasks        []types.Task
+	minChunkSize int64
+	head         int
+	mu           sync.Mutex
+	cond         *sync.Cond
+	done         bool
+	idleWorkers  int64 // Atomic counter for idle workers
 }
 
-func NewTaskQueue() *TaskQueue {
-	tq := &TaskQueue{}
+func NewTaskQueue(minChunkSize int64) *TaskQueue {
+	tq := &TaskQueue{
+		minChunkSize: minChunkSize,
+	}
 	tq.cond = sync.NewCond(&tq.mu)
 	return tq
 }
@@ -107,7 +110,7 @@ func (q *TaskQueue) SplitLargestIfNeeded() bool {
 	idx := -1
 	var maxLen int64 = 0
 	for i, t := range q.tasks {
-		if t.Length > maxLen && t.Length > 2*types.MinChunk {
+		if t.Length > maxLen && t.Length > 2*q.minChunkSize {
 			maxLen = t.Length
 			idx = i
 		}
