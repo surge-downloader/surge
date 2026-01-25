@@ -1,6 +1,9 @@
 package utils
 
 import (
+	"bytes"
+	"io"
+	"net/http"
 	"testing"
 )
 
@@ -46,6 +49,91 @@ func TestSanitizeFilename(t *testing.T) {
 			got := sanitizeFilename(tt.input)
 			if got != tt.expected {
 				t.Errorf("sanitizeFilename(%q) = %q, want %q", tt.input, got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestDetermineFilename_PriorityOrder(t *testing.T) {
+	// Helper to create a minimal ZIP header
+	makeZipHeader := func(internalName string) []byte {
+		h := make([]byte, 30+len(internalName))
+		copy(h[0:4], []byte{0x50, 0x4B, 0x03, 0x04}) // Signature
+		h[26] = byte(len(internalName))              // Filename length
+		copy(h[30:], internalName)                   // Filename
+		return h
+	}
+
+	zipContent := makeZipHeader("internal_id_123.txt")
+	pdfContent := []byte("%PDF-1.4\n") // Magic bytes for PDF
+
+	tests := []struct {
+		name     string
+		url      string
+		headers  http.Header
+		body     []byte
+		expected string
+	}{
+		{
+			name: "Priority 1: Content-Disposition beats all",
+			url:  "https://example.com/file?filename=wrong.txt",
+			headers: http.Header{
+				"Content-Disposition": []string{`attachment; filename="correct.zip"`},
+			},
+			body:     zipContent,
+			expected: "correct.zip",
+		},
+		{
+			name:     "Priority 2: Query Param beats URL Path",
+			url:      "https://example.com/download.php?filename=report.pdf",
+			headers:  http.Header{},
+			body:     pdfContent,
+			expected: "report.pdf",
+		},
+		{
+			name:     "Priority 3: URL Path beats ZIP Header (The fix you're testing)",
+			url:      "https://example.com/logs_january.zip",
+			headers:  http.Header{},
+			body:     zipContent,
+			expected: "logs_january.zip", // Should NOT be internal_id_123.txt
+		},
+		{
+			name:     "Priority 4: ZIP Header used when URL is generic",
+			url:      "", // Generic path
+			headers:  http.Header{},
+			body:     zipContent,
+			expected: "internal_id_123.txt",
+		},
+		{
+			name:     "Priority 5: MIME sniffing adds extension to generic name",
+			url:      "https://example.com/get-file",
+			headers:  http.Header{},
+			body:     pdfContent,
+			expected: "get-file.pdf",
+		},
+		{
+			name:     "Fallback: Default name when everything is missing",
+			url:      "",
+			headers:  http.Header{},
+			body:     []byte("random data"),
+			expected: "download.bin",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resp := &http.Response{
+				Header: tt.headers,
+				Body:   io.NopCloser(bytes.NewReader(tt.body)),
+			}
+
+			filename, _, err := DetermineFilename(tt.url, resp, false)
+			if err != nil {
+				t.Fatalf("Unexpected error: %v", err)
+			}
+
+			if filename != tt.expected {
+				t.Errorf("got %q, want %q", filename, tt.expected)
 			}
 		})
 	}

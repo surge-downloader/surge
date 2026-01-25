@@ -83,7 +83,7 @@ func DetermineFilename(rawurl string, resp *http.Response, verbose bool) (string
 		}
 	}
 
-	if len(header) >= 4 && bytes.HasPrefix(header, []byte{0x50, 0x4B, 0x03, 0x04}) && len(header) >= 30 {
+	if candidate == "." && len(header) >= 4 && bytes.HasPrefix(header, []byte{0x50, 0x4B, 0x03, 0x04}) && len(header) >= 30 {
 		nameLen := int(binary.LittleEndian.Uint16(header[26:28]))
 		start := 30
 		end := start + nameLen
