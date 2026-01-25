@@ -32,14 +32,14 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.24.4+auto'
+          go-version: "1.24.4+auto"
 
       - name: Update APT
         run: sudo apt-get update
 
       - name: Install Aria2
         run: sudo apt-get install -y aria2
-    
+
       - name: Install speedtest-cli
         run: sudo apt-get install -y speedtest-cli
 
@@ -59,52 +59,14 @@ jobs:
           cd current
           # Run benchmark and capture output to both console and file
           python3 benchmark.py --surge-exec ../surge-current --surge-baseline ../surge-baseline --aria2 --speedtest -n 3 | tee benchmark_output.txt
-          
+
           # Read file content into environment variable for next step (handling multiline)
           echo "BENCHMARK_RESULTS<<EOF" >> $GITHUB_ENV
           cat benchmark_output.txt >> $GITHUB_ENV
           echo "EOF" >> $GITHUB_ENV
-          
+
           # Also write to Job Summary (visible in Actions tab)
           echo "## 🚀 Benchmark Results" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
           cat benchmark_output.txt >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
-
-      - name: Comment Benchmark Results
-        uses: actions/github-script@v7
-        if: github.event_name == 'pull_request'
-        with:
-          script: |
-            const output = process.env.BENCHMARK_RESULTS;
-            const marker = '<!-- benchmark-results-marker -->';
-            const body = `## 🚀 Benchmark Results\n${marker}\n\n\`\`\`\n${output}\n\`\`\``;
-            
-            // Get existing comments
-            const { data: comments } = await github.rest.issues.listComments({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-            });
-            
-            // Find bot comment with marker
-            const botComment = comments.find(c => 
-              c.user.type === 'Bot' && 
-              c.body.includes(marker)
-            );
-            
-            if (botComment) {
-              await github.rest.issues.updateComment({
-                comment_id: botComment.id,
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                body: body
-              });
-            } else {
-              await github.rest.issues.createComment({
-                issue_number: context.issue.number,
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                body: body
-              });
-            }
