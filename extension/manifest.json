@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Surge",
   "version": "1.0.0",
-  "description": "Intercept downloads and send them to Surge (https://github.com/surge-downloader/surge)",
+  "description": "Integrate with Surge Download Manager. Intercepts downloads to accelerate them using Surge's high-performance engine.",
   "permissions": [
     "downloads",
     "storage",
@@ -12,7 +12,20 @@
     "http://127.0.0.1/*"
   ],
   "background": {
-    "service_worker": "background.js"
+    "scripts": [
+      "background.js"
+    ]
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "surge@surge-downloader.com",
+      "strict_min_version": "142.0",
+      "data_collection_permissions": {
+        "required": [
+          "none"
+        ]
+      }
+    }
   },
   "action": {
     "default_popup": "popup.html",
