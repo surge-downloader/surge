@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
-	"github.com/surge-downloader/surge/internal/download/types"
+	"github.com/surge-downloader/surge/internal/engine/types"
 )
 
 func setupTestDB(t *testing.T) string {

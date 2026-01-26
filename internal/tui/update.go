@@ -13,8 +13,8 @@ import (
 	"github.com/surge-downloader/surge/internal/clipboard"
 	"github.com/surge-downloader/surge/internal/config"
 	"github.com/surge-downloader/surge/internal/download/state"
-	"github.com/surge-downloader/surge/internal/download/types"
-	"github.com/surge-downloader/surge/internal/messages"
+	"github.com/surge-downloader/surge/internal/engine/types"
+	"github.com/surge-downloader/surge/internal/engine/events"
 	"github.com/surge-downloader/surge/internal/utils"
 	"github.com/surge-downloader/surge/internal/version"
 
@@ -188,7 +188,7 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 
-	case messages.DownloadStartedMsg:
+	case events.DownloadStartedMsg:
 
 		// Check if we already have this download
 		found := false
@@ -235,7 +235,7 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.addLogEntry(LogStyleStarted.Render("⬇ Started: " + msg.Filename))
 		cmds = append(cmds, listenForActivity(m.progressChan))
 
-	case messages.ProgressMsg:
+	case events.ProgressMsg:
 		// Progress from polling reporter
 		for _, d := range m.downloads {
 			if d.ID == msg.DownloadID {
@@ -289,7 +289,7 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
-	case messages.DownloadCompleteMsg:
+	case events.DownloadCompleteMsg:
 		for _, d := range m.downloads {
 			if d.ID == msg.DownloadID {
 				if d.done {
@@ -326,7 +326,7 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.UpdateListItems()
 		cmds = append(cmds, listenForActivity(m.progressChan))
 
-	case messages.DownloadErrorMsg:
+	case events.DownloadErrorMsg:
 		for _, d := range m.downloads {
 			if d.ID == msg.DownloadID {
 				d.err = msg.Err
@@ -339,7 +339,7 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.UpdateListItems()
 		cmds = append(cmds, listenForActivity(m.progressChan))
 
-	case messages.DownloadPausedMsg:
+	case events.DownloadPausedMsg:
 		for _, d := range m.downloads {
 			if d.ID == msg.DownloadID {
 				d.paused = true
@@ -353,7 +353,7 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.UpdateListItems()
 		cmds = append(cmds, listenForActivity(m.progressChan))
 
-	case messages.DownloadResumedMsg:
+	case events.DownloadResumedMsg:
 		for _, d := range m.downloads {
 			if d.ID == msg.DownloadID {
 				d.paused = false

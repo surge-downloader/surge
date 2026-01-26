@@ -18,7 +18,7 @@ import (
 	"github.com/surge-downloader/surge/internal/config"
 	"github.com/surge-downloader/surge/internal/download"
 	"github.com/surge-downloader/surge/internal/download/state"
-	"github.com/surge-downloader/surge/internal/download/types"
+	"github.com/surge-downloader/surge/internal/engine/types"
 	"github.com/surge-downloader/surge/internal/version"
 )
 
@@ -77,7 +77,7 @@ type RootModel struct {
 	activeTab    int // 0=Queued, 1=Active, 2=Done
 	inputs       []textinput.Model
 	focusedInput int
-	progressChan chan tea.Msg // Channel for events only (start/complete/error)
+	progressChan chan any // Channel for events only (start/complete/error)
 
 	// File picker for directory selection
 	filepicker filepicker.Model
@@ -158,7 +158,7 @@ func NewDownloadModel(id string, url string, filename string, total int64) *Down
 	}
 }
 
-func InitialRootModel(serverPort int, currentVersion string, pool *download.WorkerPool, progressChan chan tea.Msg) RootModel {
+func InitialRootModel(serverPort int, currentVersion string, pool *download.WorkerPool, progressChan chan any) RootModel {
 	// Initialize inputs
 	urlInput := textinput.New()
 	urlInput.Placeholder = "https://example.com/file.zip"
@@ -287,7 +287,7 @@ func (m RootModel) Init() tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
-func listenForActivity(sub chan tea.Msg) tea.Cmd {
+func listenForActivity(sub chan any) tea.Cmd {
 	return func() tea.Msg {
 		return <-sub
 	}

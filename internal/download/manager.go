@@ -3,7 +3,6 @@ package download
 import (
 	"context"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -11,12 +10,12 @@ import (
 	"strings"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/surge-downloader/surge/internal/download/concurrent"
-	"github.com/surge-downloader/surge/internal/download/single"
 	"github.com/surge-downloader/surge/internal/download/state"
-	"github.com/surge-downloader/surge/internal/download/types"
-	"github.com/surge-downloader/surge/internal/messages"
+	"github.com/surge-downloader/surge/internal/engine"
+	"github.com/surge-downloader/surge/internal/engine/concurrent"
+	"github.com/surge-downloader/surge/internal/engine/events"
+	"github.com/surge-downloader/surge/internal/engine/single"
+	"github.com/surge-downloader/surge/internal/engine/types"
 	"github.com/surge-downloader/surge/internal/utils"
 )
 
@@ -34,101 +33,7 @@ type ProbeResult struct {
 	ContentType   string
 }
 
-// probeServer sends GET with Range: bytes=0-0 to determine server capabilities
-func probeServer(ctx context.Context, rawurl string, filenameHint string) (*ProbeResult, error) {
-	utils.Debug("Probing server: %s", rawurl)
-
-	var resp *http.Response
-	var err error
-
-	// Retry logic for probe request
-	for i := 0; i < 3; i++ {
-		if i > 0 {
-			time.Sleep(1 * time.Second)
-			utils.Debug("Retrying probe... attempt %d", i+1)
-		}
-
-		probeCtx, cancel := context.WithTimeout(ctx, types.ProbeTimeout)
-		defer cancel()
-
-		req, reqErr := http.NewRequestWithContext(probeCtx, http.MethodGet, rawurl, nil)
-		if reqErr != nil {
-			err = fmt.Errorf("failed to create probe request: %w", reqErr)
-			break // Fatal error, don't retry
-		}
-
-		req.Header.Set("Range", "bytes=0-0")
-		req.Header.Set("User-Agent", ua)
-
-		resp, err = probeClient.Do(req)
-		if err == nil {
-			break // Success
-		}
-	}
-
-	if err != nil {
-		return nil, fmt.Errorf("probe request failed after retries: %w", err)
-	}
-
-	defer func() {
-		io.Copy(io.Discard, resp.Body) // Drain any remaining data
-		resp.Body.Close()
-	}()
-
-	utils.Debug("Probe response status: %d", resp.StatusCode)
-
-	result := &ProbeResult{}
-
-	// Determine range support and file size based on status code
-	switch resp.StatusCode {
-	case http.StatusPartialContent: // 206
-		result.SupportsRange = true
-		// Parse Content-Range: bytes 0-0/TOTAL
-		contentRange := resp.Header.Get("Content-Range")
-		utils.Debug("Content-Range header: %s", contentRange)
-		if contentRange != "" {
-			// Format: "bytes 0-0/12345" or "bytes 0-0/*"
-			if idx := strings.LastIndex(contentRange, "/"); idx != -1 {
-				sizeStr := contentRange[idx+1:]
-				if sizeStr != "*" {
-					result.FileSize, _ = strconv.ParseInt(sizeStr, 10, 64)
-				}
-			}
-		}
-		utils.Debug("Range supported, file size: %d", result.FileSize)
-
-	case http.StatusOK: // 200 - server ignores Range header
-		result.SupportsRange = false
-		contentLength := resp.Header.Get("Content-Length")
-		if contentLength != "" {
-			result.FileSize, _ = strconv.ParseInt(contentLength, 10, 64)
-		}
-		utils.Debug("Range NOT supported (got 200), file size: %d", result.FileSize)
-
-	default:
-		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
-	}
-
-	// Determine filename using strengthened logic
-	name, _, err := utils.DetermineFilename(rawurl, resp, false)
-	if err != nil {
-		utils.Debug("Error determining filename: %v", err)
-		name = "download.bin"
-	}
-
-	if filenameHint != "" {
-		result.Filename = filenameHint
-	} else {
-		result.Filename = name
-	}
-
-	result.ContentType = resp.Header.Get("Content-Type")
-
-	utils.Debug("Probe complete - filename: %s, size: %d, range: %v",
-		result.Filename, result.FileSize, result.SupportsRange)
-
-	return result, nil
-}
+// probeServer has been moved to internal/engine/probe.go
 
 // uniqueFilePath returns a unique file path by appending (1), (2), etc. if the file exists
 func uniqueFilePath(path string) string {
@@ -174,11 +79,10 @@ func uniqueFilePath(path string) string {
 }
 
 // TUIDownload is the main entry point for TUI downloads
-// TUIDownload is the main entry point for TUI downloads
 func TUIDownload(ctx context.Context, cfg *types.DownloadConfig) error {
 
 	// Probe server once to get all metadata
-	probe, err := probeServer(ctx, cfg.URL, cfg.Filename)
+	probe, err := engine.ProbeServer(ctx, cfg.URL, cfg.Filename)
 	if err != nil {
 		utils.Debug("Probe failed: %v", err)
 		return err
@@ -233,7 +137,7 @@ func TUIDownload(ctx context.Context, cfg *types.DownloadConfig) error {
 
 	// Send download started message
 	if cfg.ProgressCh != nil {
-		cfg.ProgressCh <- messages.DownloadStartedMsg{
+		cfg.ProgressCh <- events.DownloadStartedMsg{
 			DownloadID: cfg.ID,
 			URL:        cfg.URL,
 			Filename:   finalFilename,
@@ -263,7 +167,7 @@ func TUIDownload(ctx context.Context, cfg *types.DownloadConfig) error {
 	// Only send completion if NO error AND not paused
 	isPaused := cfg.State != nil && cfg.State.IsPaused()
 	if downloadErr == nil && !isPaused && cfg.ProgressCh != nil {
-		cfg.ProgressCh <- messages.DownloadCompleteMsg{
+		cfg.ProgressCh <- events.DownloadCompleteMsg{
 			DownloadID: cfg.ID,
 			Filename:   finalFilename,
 			Elapsed:    time.Since(start),
@@ -275,7 +179,7 @@ func TUIDownload(ctx context.Context, cfg *types.DownloadConfig) error {
 }
 
 // Download is the CLI entry point (non-TUI) - convenience wrapper
-func Download(ctx context.Context, url, outPath string, verbose bool, progressCh chan<- tea.Msg, id string) error {
+func Download(ctx context.Context, url, outPath string, verbose bool, progressCh chan<- any, id string) error {
 	cfg := types.DownloadConfig{
 		URL:        url,
 		OutputPath: outPath,

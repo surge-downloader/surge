@@ -3,7 +3,7 @@ package tui
 import (
 	"time"
 
-	"github.com/surge-downloader/surge/internal/download/types"
+	"github.com/surge-downloader/surge/internal/engine/types"
 )
 
 const (

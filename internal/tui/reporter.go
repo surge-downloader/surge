@@ -3,8 +3,8 @@ package tui
 import (
 	"time"
 
-	"github.com/surge-downloader/surge/internal/download/types"
-	"github.com/surge-downloader/surge/internal/messages"
+	"github.com/surge-downloader/surge/internal/engine/types"
+	"github.com/surge-downloader/surge/internal/engine/events"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -38,7 +38,7 @@ func (r *ProgressReporter) PollCmd() tea.Cmd {
 			if total <= 0 {
 				total = r.state.Downloaded.Load()
 			}
-			return messages.DownloadCompleteMsg{
+			return events.DownloadCompleteMsg{
 				DownloadID: r.state.ID,
 				Elapsed:    elapsed,
 				Total:      total,
@@ -47,7 +47,7 @@ func (r *ProgressReporter) PollCmd() tea.Cmd {
 
 		// Check for errors
 		if err := r.state.GetError(); err != nil {
-			return messages.DownloadErrorMsg{
+			return events.DownloadErrorMsg{
 				DownloadID: r.state.ID,
 				Err:        err,
 			}
@@ -70,7 +70,7 @@ func (r *ProgressReporter) PollCmd() tea.Cmd {
 			r.lastSpeed = SpeedSmoothingAlpha*instantSpeed + (1-SpeedSmoothingAlpha)*r.lastSpeed
 		}
 
-		return messages.ProgressMsg{
+		return events.ProgressMsg{
 			DownloadID:        r.state.ID,
 			Downloaded:        downloaded,
 			Total:             total,

@@ -4,9 +4,8 @@ import (
 	"context"
 	"sync"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/surge-downloader/surge/internal/download/types"
-	"github.com/surge-downloader/surge/internal/messages"
+	"github.com/surge-downloader/surge/internal/engine/events"
+	"github.com/surge-downloader/surge/internal/engine/types"
 )
 
 // activeDownload tracks a download that's currently running
@@ -17,14 +16,14 @@ type activeDownload struct {
 
 type WorkerPool struct {
 	taskChan     chan types.DownloadConfig
-	progressCh   chan<- tea.Msg
+	progressCh   chan<- any
 	downloads    map[string]*activeDownload // Track active downloads for pause/resume
 	mu           sync.RWMutex
 	wg           sync.WaitGroup //We use this to wait for all active downloads to pause before exiting the program
 	maxDownloads int
 }
 
-func NewWorkerPool(progressCh chan<- tea.Msg, maxDownloads int) *WorkerPool {
+func NewWorkerPool(progressCh chan<- any, maxDownloads int) *WorkerPool {
 	if maxDownloads < 1 {
 		maxDownloads = 3 // Default to 3 if invalid
 	}
@@ -65,7 +64,7 @@ func (p *WorkerPool) Pause(downloadID string) {
 		if ad.config.State != nil {
 			downloaded = ad.config.State.Downloaded.Load()
 		}
-		p.progressCh <- messages.DownloadPausedMsg{
+		p.progressCh <- events.DownloadPausedMsg{
 			DownloadID: downloadID,
 			Downloaded: downloaded,
 		}
@@ -133,7 +132,7 @@ func (p *WorkerPool) Resume(downloadID string) {
 
 	// Send resume message
 	if p.progressCh != nil {
-		p.progressCh <- messages.DownloadResumedMsg{
+		p.progressCh <- events.DownloadResumedMsg{
 			DownloadID: downloadID,
 		}
 	}
@@ -164,7 +163,7 @@ func (p *WorkerPool) worker() {
 				cfg.State.SetError(err)
 			}
 			if p.progressCh != nil {
-				p.progressCh <- messages.DownloadErrorMsg{DownloadID: cfg.ID, Err: err}
+				p.progressCh <- events.DownloadErrorMsg{DownloadID: cfg.ID, Err: err}
 			}
 			// Clean up errored download from tracking (don't save to .surge)
 			p.mu.Lock()

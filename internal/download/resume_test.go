@@ -7,11 +7,10 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/google/uuid"
 	"github.com/surge-downloader/surge/internal/download"
 	"github.com/surge-downloader/surge/internal/download/state"
-	"github.com/surge-downloader/surge/internal/download/types"
+	"github.com/surge-downloader/surge/internal/engine/types"
 	"github.com/surge-downloader/surge/internal/testutil"
 )
 
@@ -57,7 +56,7 @@ func TestIntegration_PauseResume(t *testing.T) {
 	ctx := context.Background()
 
 	// Create a progress channel we can ignore
-	progressCh := make(chan tea.Msg, 100)
+	progressCh := make(chan any, 100)
 
 	// Create a runtime config
 	runtime := &types.RuntimeConfig{}

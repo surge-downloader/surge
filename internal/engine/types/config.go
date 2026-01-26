@@ -2,8 +2,6 @@ package types
 
 import (
 	"time"
-
-	tea "github.com/charmbracelet/bubbletea"
 )
 
 // Size constants
@@ -61,7 +59,7 @@ type DownloadConfig struct {
 	Filename   string
 	Verbose    bool
 	IsResume   bool // True if this is explicitly a resume, not a fresh download
-	ProgressCh chan<- tea.Msg
+	ProgressCh chan<- any
 	State      *ProgressState
 	Runtime    *RuntimeConfig // Dynamic settings from user config
 }

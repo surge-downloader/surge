@@ -13,15 +13,14 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/surge-downloader/surge/internal/config"
 	"github.com/surge-downloader/surge/internal/download"
-	"github.com/surge-downloader/surge/internal/download/types"
+	"github.com/surge-downloader/surge/internal/engine/types"
 )
 
 func init() {
 	// Initialize GlobalPool for tests
-	GlobalProgressCh = make(chan tea.Msg, 100)
+	GlobalProgressCh = make(chan any, 100)
 	GlobalPool = download.NewWorkerPool(GlobalProgressCh, 4)
 }
 

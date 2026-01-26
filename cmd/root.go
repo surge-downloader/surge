@@ -14,8 +14,8 @@ import (
 
 	"github.com/surge-downloader/surge/internal/config"
 	"github.com/surge-downloader/surge/internal/download"
-	"github.com/surge-downloader/surge/internal/download/types"
-	"github.com/surge-downloader/surge/internal/messages"
+	"github.com/surge-downloader/surge/internal/engine/events"
+	"github.com/surge-downloader/surge/internal/engine/types"
 	"github.com/surge-downloader/surge/internal/tui"
 	"github.com/surge-downloader/surge/internal/utils"
 
@@ -36,7 +36,7 @@ var activeDownloads int32
 // Globals for Unified Backend
 var (
 	GlobalPool       *download.WorkerPool
-	GlobalProgressCh chan tea.Msg
+	GlobalProgressCh chan any
 	serverProgram    *tea.Program
 )
 
@@ -48,7 +48,7 @@ var rootCmd = &cobra.Command{
 	Version: Version,
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
 		// Initialize Global Progress Channel
-		GlobalProgressCh = make(chan tea.Msg, 100)
+		GlobalProgressCh = make(chan any, 100)
 
 		// Initialize Global Worker Pool
 		// TODO: Load max downloads from settings
@@ -158,12 +158,12 @@ func StartHeadlessConsumer() {
 	go func() {
 		for msg := range GlobalProgressCh {
 			switch m := msg.(type) {
-			case messages.DownloadStartedMsg:
+			case events.DownloadStartedMsg:
 				fmt.Printf("Started: %s\n", m.Filename)
-			case messages.DownloadCompleteMsg:
+			case events.DownloadCompleteMsg:
 				atomic.AddInt32(&activeDownloads, -1)
 				fmt.Printf("Completed: %s (in %s)\n", m.Filename, m.Elapsed)
-			case messages.DownloadErrorMsg:
+			case events.DownloadErrorMsg:
 				atomic.AddInt32(&activeDownloads, -1)
 				fmt.Printf("Error: %s\n", m.Err)
 			}

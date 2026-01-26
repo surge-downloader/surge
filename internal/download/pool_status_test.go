@@ -3,12 +3,11 @@ package download
 import (
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/surge-downloader/surge/internal/download/types"
+	"github.com/surge-downloader/surge/internal/engine/types"
 )
 
 func TestWorkerPool_GetStatus_NonExistent(t *testing.T) {
-	ch := make(chan tea.Msg, 10)
+	ch := make(chan any, 10)
 	pool := NewWorkerPool(ch, 3)
 
 	status := pool.GetStatus("non-existent-id")
@@ -18,7 +17,7 @@ func TestWorkerPool_GetStatus_NonExistent(t *testing.T) {
 }
 
 func TestWorkerPool_GetStatus_Active(t *testing.T) {
-	ch := make(chan tea.Msg, 10)
+	ch := make(chan any, 10)
 	pool := NewWorkerPool(ch, 3)
 
 	id := "test-id"
@@ -59,7 +58,7 @@ func TestWorkerPool_GetStatus_Active(t *testing.T) {
 }
 
 func TestWorkerPool_GetStatus_Paused(t *testing.T) {
-	ch := make(chan tea.Msg, 10)
+	ch := make(chan any, 10)
 	pool := NewWorkerPool(ch, 3)
 
 	id := "test-id"
@@ -83,7 +82,7 @@ func TestWorkerPool_GetStatus_Paused(t *testing.T) {
 }
 
 func TestWorkerPool_GetStatus_Completed(t *testing.T) {
-	ch := make(chan tea.Msg, 10)
+	ch := make(chan any, 10)
 	pool := NewWorkerPool(ch, 3)
 
 	id := "test-id"

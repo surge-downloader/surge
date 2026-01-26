@@ -11,9 +11,8 @@ import (
 	"sync"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/surge-downloader/surge/internal/download/state"
-	"github.com/surge-downloader/surge/internal/download/types"
+	"github.com/surge-downloader/surge/internal/engine/types"
 	"github.com/surge-downloader/surge/internal/utils"
 )
 
@@ -27,7 +26,7 @@ var bufPool = sync.Pool{
 
 // ConcurrentDownloader handles multi-connection downloads
 type ConcurrentDownloader struct {
-	ProgressChan chan<- tea.Msg       // Channel for events (start/complete/error)
+	ProgressChan chan<- any           // Channel for events (start/complete/error)
 	ID           string               // Download ID
 	State        *types.ProgressState // Shared state for TUI polling
 	activeTasks  map[int]*ActiveTask
@@ -38,7 +37,7 @@ type ConcurrentDownloader struct {
 }
 
 // NewConcurrentDownloader creates a new concurrent downloader with all required parameters
-func NewConcurrentDownloader(id string, progressCh chan<- tea.Msg, progState *types.ProgressState, runtime *types.RuntimeConfig) *ConcurrentDownloader {
+func NewConcurrentDownloader(id string, progressCh chan<- any, progState *types.ProgressState, runtime *types.RuntimeConfig) *ConcurrentDownloader {
 	return &ConcurrentDownloader{
 		ID:           id,
 		ProgressChan: progressCh,
@@ -196,6 +195,10 @@ func (d *ConcurrentDownloader) Download(ctx context.Context, rawurl, destPath st
 
 	// Check for saved state BEFORE truncating (resume case)
 	var tasks []types.Task
+	// TODO: LoadState dependency needs refactor or move.
+	// For now we assume state package is still in internal/download/state?
+	// But state package depends on internal/download/types... which is now engine/types?
+	// We didn't move state package yet. Ideally state package should use engine/types.
 	savedState, err := state.LoadState(rawurl, destPath)
 	isResume := err == nil && savedState != nil && len(savedState.Tasks) > 0
 

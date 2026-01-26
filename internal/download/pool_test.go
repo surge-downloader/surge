@@ -6,13 +6,12 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/surge-downloader/surge/internal/download/types"
-	"github.com/surge-downloader/surge/internal/messages"
+	"github.com/surge-downloader/surge/internal/engine/types"
+	"github.com/surge-downloader/surge/internal/engine/events"
 )
 
 func TestNewWorkerPool(t *testing.T) {
-	ch := make(chan tea.Msg, 10)
+	ch := make(chan any, 10)
 	pool := NewWorkerPool(ch, 3)
 
 	if pool == nil {
@@ -37,7 +36,7 @@ func TestNewWorkerPool(t *testing.T) {
 }
 
 func TestNewWorkerPool_MaxDownloadsValidation(t *testing.T) {
-	ch := make(chan tea.Msg, 10)
+	ch := make(chan any, 10)
 
 	tests := []struct {
 		name         string
@@ -74,7 +73,7 @@ func TestNewWorkerPool_NilChannel(t *testing.T) {
 }
 
 func TestWorkerPool_Add_QueuesToChannel(t *testing.T) {
-	ch := make(chan tea.Msg, 10)
+	ch := make(chan any, 10)
 	pool := NewWorkerPool(ch, 3)
 
 	cfg := types.DownloadConfig{
@@ -98,7 +97,7 @@ func TestWorkerPool_Add_QueuesToChannel(t *testing.T) {
 }
 
 func TestWorkerPool_Pause_NonExistentDownload(t *testing.T) {
-	ch := make(chan tea.Msg, 10)
+	ch := make(chan any, 10)
 	pool := NewWorkerPool(ch, 3)
 
 	// Should not panic when pausing non-existent download
@@ -114,7 +113,7 @@ func TestWorkerPool_Pause_NonExistentDownload(t *testing.T) {
 }
 
 func TestWorkerPool_Pause_ActiveDownload(t *testing.T) {
-	ch := make(chan tea.Msg, 10)
+	ch := make(chan any, 10)
 	pool := NewWorkerPool(ch, 3)
 
 	// Create a progress state
@@ -141,7 +140,7 @@ func TestWorkerPool_Pause_ActiveDownload(t *testing.T) {
 	// Check that a pause message was sent
 	select {
 	case msg := <-ch:
-		pausedMsg, ok := msg.(messages.DownloadPausedMsg)
+		pausedMsg, ok := msg.(events.DownloadPausedMsg)
 		if !ok {
 			t.Errorf("Expected DownloadPausedMsg, got %T", msg)
 		}
@@ -157,7 +156,7 @@ func TestWorkerPool_Pause_ActiveDownload(t *testing.T) {
 }
 
 func TestWorkerPool_Pause_NilState(t *testing.T) {
-	ch := make(chan tea.Msg, 10)
+	ch := make(chan any, 10)
 	pool := NewWorkerPool(ch, 3)
 
 	// Add download with nil state
@@ -176,7 +175,7 @@ func TestWorkerPool_Pause_NilState(t *testing.T) {
 	// Message should still be sent with Downloaded=0
 	select {
 	case msg := <-ch:
-		pausedMsg, ok := msg.(messages.DownloadPausedMsg)
+		pausedMsg, ok := msg.(events.DownloadPausedMsg)
 		if !ok {
 			t.Errorf("Expected DownloadPausedMsg, got %T", msg)
 		}
@@ -189,7 +188,7 @@ func TestWorkerPool_Pause_NilState(t *testing.T) {
 }
 
 func TestWorkerPool_PauseAll_NoDownloads(t *testing.T) {
-	ch := make(chan tea.Msg, 10)
+	ch := make(chan any, 10)
 	pool := NewWorkerPool(ch, 3)
 
 	// Should not panic with no downloads
@@ -205,7 +204,7 @@ func TestWorkerPool_PauseAll_NoDownloads(t *testing.T) {
 }
 
 func TestWorkerPool_PauseAll_MultipleDownloads(t *testing.T) {
-	ch := make(chan tea.Msg, 10)
+	ch := make(chan any, 10)
 	pool := NewWorkerPool(ch, 3)
 
 	// Add multiple active downloads
@@ -237,7 +236,7 @@ func TestWorkerPool_PauseAll_MultipleDownloads(t *testing.T) {
 	for receivedCount < 3 {
 		select {
 		case msg := <-ch:
-			if _, ok := msg.(messages.DownloadPausedMsg); ok {
+			if _, ok := msg.(events.DownloadPausedMsg); ok {
 				receivedCount++
 			}
 		case <-time.After(100 * time.Millisecond):
@@ -248,7 +247,7 @@ func TestWorkerPool_PauseAll_MultipleDownloads(t *testing.T) {
 }
 
 func TestWorkerPool_PauseAll_SkipsAlreadyPaused(t *testing.T) {
-	ch := make(chan tea.Msg, 10)
+	ch := make(chan any, 10)
 	pool := NewWorkerPool(ch, 3)
 
 	// Add one paused and one active download
@@ -274,7 +273,7 @@ loop:
 	for {
 		select {
 		case msg := <-ch:
-			if pausedMsg, ok := msg.(messages.DownloadPausedMsg); ok {
+			if pausedMsg, ok := msg.(events.DownloadPausedMsg); ok {
 				receivedCount++
 				if pausedMsg.DownloadID != "active" {
 					t.Errorf("Unexpected pause message for ID '%s'", pausedMsg.DownloadID)
@@ -291,7 +290,7 @@ loop:
 }
 
 func TestWorkerPool_PauseAll_SkipsCompletedDownloads(t *testing.T) {
-	ch := make(chan tea.Msg, 10)
+	ch := make(chan any, 10)
 	pool := NewWorkerPool(ch, 3)
 
 	// Add one completed and one active download
@@ -317,7 +316,7 @@ loop:
 	for {
 		select {
 		case msg := <-ch:
-			if pausedMsg, ok := msg.(messages.DownloadPausedMsg); ok {
+			if pausedMsg, ok := msg.(events.DownloadPausedMsg); ok {
 				receivedCount++
 				if pausedMsg.DownloadID != "active" {
 					t.Errorf("Unexpected pause message for ID '%s'", pausedMsg.DownloadID)
@@ -334,7 +333,7 @@ loop:
 }
 
 func TestWorkerPool_Cancel_NonExistentDownload(t *testing.T) {
-	ch := make(chan tea.Msg, 10)
+	ch := make(chan any, 10)
 	pool := NewWorkerPool(ch, 3)
 
 	// Should not panic
@@ -342,7 +341,7 @@ func TestWorkerPool_Cancel_NonExistentDownload(t *testing.T) {
 }
 
 func TestWorkerPool_Cancel_RemovesFromMap(t *testing.T) {
-	ch := make(chan tea.Msg, 10)
+	ch := make(chan any, 10)
 	pool := NewWorkerPool(ch, 3)
 
 	state := types.NewProgressState("test-id", 1000)
@@ -368,7 +367,7 @@ func TestWorkerPool_Cancel_RemovesFromMap(t *testing.T) {
 }
 
 func TestWorkerPool_Cancel_CallsCancelFunc(t *testing.T) {
-	ch := make(chan tea.Msg, 10)
+	ch := make(chan any, 10)
 	pool := NewWorkerPool(ch, 3)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -396,7 +395,7 @@ func TestWorkerPool_Cancel_CallsCancelFunc(t *testing.T) {
 }
 
 func TestWorkerPool_Cancel_MarksDone(t *testing.T) {
-	ch := make(chan tea.Msg, 10)
+	ch := make(chan any, 10)
 	pool := NewWorkerPool(ch, 3)
 
 	state := types.NewProgressState("test-id", 1000)
@@ -418,7 +417,7 @@ func TestWorkerPool_Cancel_MarksDone(t *testing.T) {
 }
 
 func TestWorkerPool_Resume_NonExistentDownload(t *testing.T) {
-	ch := make(chan tea.Msg, 10)
+	ch := make(chan any, 10)
 	pool := NewWorkerPool(ch, 3)
 
 	// Should not panic
@@ -434,7 +433,7 @@ func TestWorkerPool_Resume_NonExistentDownload(t *testing.T) {
 }
 
 func TestWorkerPool_Resume_ClearsPausedFlag(t *testing.T) {
-	ch := make(chan tea.Msg, 10)
+	ch := make(chan any, 10)
 	pool := NewWorkerPool(ch, 3)
 
 	state := types.NewProgressState("test-id", 1000)
@@ -457,7 +456,7 @@ func TestWorkerPool_Resume_ClearsPausedFlag(t *testing.T) {
 }
 
 func TestWorkerPool_Resume_SendsResumedMessage(t *testing.T) {
-	ch := make(chan tea.Msg, 10)
+	ch := make(chan any, 10)
 	pool := NewWorkerPool(ch, 3)
 
 	state := types.NewProgressState("test-id", 1000)
@@ -478,7 +477,7 @@ func TestWorkerPool_Resume_SendsResumedMessage(t *testing.T) {
 	// Check for resumed message
 	select {
 	case msg := <-ch:
-		resumedMsg, ok := msg.(messages.DownloadResumedMsg)
+		resumedMsg, ok := msg.(events.DownloadResumedMsg)
 		if !ok {
 			t.Errorf("Expected DownloadResumedMsg, got %T", msg)
 		}
@@ -491,7 +490,7 @@ func TestWorkerPool_Resume_SendsResumedMessage(t *testing.T) {
 }
 
 func TestWorkerPool_Resume_RequeuesDownload(t *testing.T) {
-	ch := make(chan tea.Msg, 10)
+	ch := make(chan any, 10)
 	pool := NewWorkerPool(ch, 3)
 
 	state := types.NewProgressState("test-id", 1000)
@@ -520,7 +519,7 @@ func TestWorkerPool_Resume_RequeuesDownload(t *testing.T) {
 	// Check for resumed message
 	select {
 	case msg := <-ch:
-		if resumedMsg, ok := msg.(messages.DownloadResumedMsg); ok {
+		if resumedMsg, ok := msg.(events.DownloadResumedMsg); ok {
 			if resumedMsg.DownloadID != cfg.ID {
 				t.Errorf("Expected ID '%s', got '%s'", cfg.ID, resumedMsg.DownloadID)
 			}
@@ -533,7 +532,7 @@ func TestWorkerPool_Resume_RequeuesDownload(t *testing.T) {
 }
 
 func TestWorkerPool_GracefulShutdown_PausesAll(t *testing.T) {
-	ch := make(chan tea.Msg, 10)
+	ch := make(chan any, 10)
 	pool := NewWorkerPool(ch, 3)
 
 	state := types.NewProgressState("test-id", 1000)
@@ -567,7 +566,7 @@ func TestWorkerPool_GracefulShutdown_PausesAll(t *testing.T) {
 }
 
 func TestWorkerPool_ConcurrentPauseCancel(t *testing.T) {
-	ch := make(chan tea.Msg, 100)
+	ch := make(chan any, 100)
 	pool := NewWorkerPool(ch, 3)
 
 	// Add multiple downloads
