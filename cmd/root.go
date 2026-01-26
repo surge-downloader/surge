@@ -10,6 +10,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -33,6 +34,9 @@ var (
 // serverProgram holds the TUI program for sending messages from HTTP handler
 var serverProgram *tea.Program
 
+// activeDownloads tracks the number of currently running downloads in headless mode
+var activeDownloads int32
+
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
 	Use:     "surge",
@@ -40,12 +44,26 @@ var rootCmd = &cobra.Command{
 	Long:    `Surge is a blazing fast, open-source terminal (TUI) download manager built in Go.`,
 	Version: Version,
 	Run: func(cmd *cobra.Command, args []string) {
+		// Attempt to acquire lock
+		isMaster, err := AcquireLock()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error acquiring lock: %v\n", err)
+			os.Exit(1)
+		}
+
+		if !isMaster {
+			fmt.Fprintln(os.Stderr, "Error: Surge is already running.")
+			fmt.Fprintln(os.Stderr, "Use 'surge get <url>' to add a download to the active instance.")
+			os.Exit(1)
+		}
+		defer ReleaseLock()
+
 		headless, _ := cmd.Flags().GetBool("headless")
 		portFlag, _ := cmd.Flags().GetInt("port")
 
 		var port int
 		var listener net.Listener
-		var err error
+		// var err error // err already declared above
 
 		if portFlag > 0 {
 			// Strict port mode
@@ -64,7 +82,7 @@ var rootCmd = &cobra.Command{
 			}
 		}
 
-		// Save port for browser extension to discover
+		// Save port for browser extension AND CLI discovery
 		saveActivePort(port)
 
 		outputDir, _ := cmd.Flags().GetString("output")
@@ -220,6 +238,9 @@ func handleDownload(w http.ResponseWriter, r *http.Request, defaultOutputDir str
 				}
 			}
 
+			// Increment active downloads
+			atomic.AddInt32(&activeDownloads, 1)
+
 			fmt.Printf("Starting headless download: %s -> %s\n", req.URL, outPath)
 			ctx := context.Background()
 
@@ -233,6 +254,7 @@ func handleDownload(w http.ResponseWriter, r *http.Request, defaultOutputDir str
 
 			// Run download in background
 			go func() {
+				defer atomic.AddInt32(&activeDownloads, -1)
 				err := download.Download(ctx, req.URL, outPath, false, eventCh, uuid.New().String())
 				errCh <- err
 				close(eventCh)
