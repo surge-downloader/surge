@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/surge-downloader/surge/internal/config"
+	"github.com/surge-downloader/surge/internal/engine/state"
 
 	"github.com/spf13/cobra"
 )
@@ -259,42 +260,86 @@ func readActivePort() int {
 func handleStatusQuery(id string, portFlag int) {
 	// Need to find running instance port
 	port := portFlag
-	if port == 0 {
+	surgeRunning := false
 
+	if port == 0 {
 		isMaster, err := AcquireLock()
 		if err == nil && isMaster {
 			ReleaseLock()
-			fmt.Println("Error: Surge is not running. Cannot query status.")
+			surgeRunning = false
+		} else {
+			surgeRunning = true
+			port = readActivePort()
+		}
+	} else {
+		surgeRunning = true
+	}
+
+	foundViaHTTP := false
+	if surgeRunning {
+		url := fmt.Sprintf("http://127.0.0.1:%d/download?id=%s", port, id)
+		resp, err := http.Get(url)
+		if err == nil {
+			defer resp.Body.Close()
+			if resp.StatusCode == http.StatusOK {
+				var status map[string]interface{}
+				if err := json.NewDecoder(resp.Body).Decode(&status); err == nil {
+					printStatusTable(status)
+					foundViaHTTP = true
+					return
+				}
+			}
+		}
+	}
+
+	if !foundViaHTTP {
+		// Fallback to SQLite
+		entry, err := state.GetDownload(id)
+		if err != nil {
+			// If not found in DB either, then it really doesn't exist
+			// But GetDownload returns nil, nil for not found (based on my implementation)
+			// Wait, I implemented it to return nil, nil if sql.ErrNoRows.
+			// Let's check error handling in GetDownload.
+			// Yes: if err == sql.ErrNoRows { return nil, nil }
+		}
+
+		if entry == nil {
+			fmt.Printf("Download ID %s not found.\n", id)
+			if !surgeRunning {
+				fmt.Println("(Surge is not running)")
+			}
 			os.Exit(1)
 		}
 
-		// Surge is running (lock failed), find port
-		port = readActivePort()
-	}
+		// Convert to map for printStatusTable
+		// We calculate progress based on TotalSize and Downloaded
+		var progress float64
+		if entry.TotalSize > 0 {
+			progress = float64(entry.Downloaded) / float64(entry.TotalSize) * 100
+		} else if entry.Status == "completed" {
+			progress = 100.0
+		}
 
-	url := fmt.Sprintf("http://127.0.0.1:%d/download?id=%s", port, id)
-	resp, err := http.Get(url)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error connecting to server: %v\n", err)
-		os.Exit(1)
-	}
-	defer resp.Body.Close()
+		// Calculate speed... meaningless for static entry unless we store it?
+		// We store TimeTaken for completed.
+		var speed float64
+		if entry.Status == "completed" && entry.TimeTaken > 0 {
+			// TimeTaken is in ms. TotalSize is bytes.
+			// Speed in MB/s = (TotalSize / 1024 / 1024) / (TimeTaken / 1000)
+			// = TotalSize * 1000 / TimeTaken / 1024 / 1024
+			speed = float64(entry.TotalSize) * 1000 / float64(entry.TimeTaken) / 1024 / 1024
+		}
 
-	if resp.StatusCode != http.StatusOK {
-		fmt.Fprintf(os.Stderr, "Error: %s\n", resp.Status)
-		os.Exit(1)
-	}
+		status := map[string]interface{}{
+			"id":       entry.ID,
+			"filename": entry.Filename,
+			"status":   entry.Status,
+			"progress": progress,
+			"speed":    speed,
+		}
 
-	// Parse JSON
-	var status map[string]interface{}
-	if err := json.NewDecoder(resp.Body).Decode(&status); err != nil {
-		fmt.Fprintf(os.Stderr, "Error parsing response: %v\n", err)
-		os.Exit(1)
+		printStatusTable(status)
 	}
-
-	// Pretty print status
-	// json.NewEncoder(os.Stdout).Encode(status)
-	printStatusTable(status)
 }
 
 func printStatusTable(s map[string]interface{}) {

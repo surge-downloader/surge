@@ -178,7 +178,7 @@ func LoadMasterList() (*types.MasterList, error) {
 	}
 
 	rows, err := db.Query(`
-		SELECT id, url, dest_path, filename, status, total_size, completed_at, time_taken, url_hash 
+		SELECT id, url, dest_path, filename, status, total_size, downloaded, completed_at, time_taken, url_hash 
 		FROM downloads
 	`)
 	if err != nil {
@@ -192,7 +192,7 @@ func LoadMasterList() (*types.MasterList, error) {
 		var completedAt, timeTaken sql.NullInt64 // handle nulls
 
 		if err := rows.Scan(
-			&e.ID, &e.URL, &e.DestPath, &e.Filename, &e.Status, &e.TotalSize,
+			&e.ID, &e.URL, &e.DestPath, &e.Filename, &e.Status, &e.TotalSize, &e.Downloaded,
 			&completedAt, &timeTaken, &e.URLHash,
 		); err != nil {
 			return nil, err
@@ -226,19 +226,20 @@ func AddToMasterList(entry types.DownloadEntry) error {
 	return withTx(func(tx *sql.Tx) error {
 		_, err := tx.Exec(`
 			INSERT INTO downloads (
-				id, url, dest_path, filename, status, total_size, completed_at, time_taken, url_hash
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+				id, url, dest_path, filename, status, total_size, downloaded, completed_at, time_taken, url_hash
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT(id) DO UPDATE SET
 				url=excluded.url,
 				dest_path=excluded.dest_path,
 				filename=excluded.filename,
 				status=excluded.status,
 				total_size=excluded.total_size,
+				downloaded=excluded.downloaded,
 				completed_at=excluded.completed_at,
 				time_taken=excluded.time_taken,
 				url_hash=excluded.url_hash
 		`,
-			entry.ID, entry.URL, entry.DestPath, entry.Filename, entry.Status, entry.TotalSize,
+			entry.ID, entry.URL, entry.DestPath, entry.Filename, entry.Status, entry.TotalSize, entry.Downloaded,
 			entry.CompletedAt, entry.TimeTaken, entry.URLHash)
 
 		return err
@@ -254,6 +255,42 @@ func RemoveFromMasterList(id string) error {
 
 	_, err := db.Exec("DELETE FROM downloads WHERE id = ?", id)
 	return err
+}
+
+// GetDownload returns a single download by ID
+func GetDownload(id string) (*types.DownloadEntry, error) {
+	db := getDBHelper()
+	if db == nil {
+		return nil, fmt.Errorf("database not initialized")
+	}
+
+	var e types.DownloadEntry
+	var completedAt, timeTaken sql.NullInt64
+
+	row := db.QueryRow(`
+		SELECT id, url, dest_path, filename, status, total_size, downloaded, completed_at, time_taken, url_hash 
+		FROM downloads
+		WHERE id = ?
+	`, id)
+
+	if err := row.Scan(
+		&e.ID, &e.URL, &e.DestPath, &e.Filename, &e.Status, &e.TotalSize, &e.Downloaded,
+		&completedAt, &timeTaken, &e.URLHash,
+	); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil // Not found
+		}
+		return nil, fmt.Errorf("failed to query download: %w", err)
+	}
+
+	if completedAt.Valid {
+		e.CompletedAt = completedAt.Int64
+	}
+	if timeTaken.Valid {
+		e.TimeTaken = timeTaken.Int64
+	}
+
+	return &e, nil
 }
 
 // LoadPausedDownloads returns all paused downloads

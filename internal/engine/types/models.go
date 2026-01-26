@@ -29,6 +29,7 @@ type DownloadEntry struct {
 	Filename    string `json:"filename"`
 	Status      string `json:"status"`       // "paused", "completed", "error"
 	TotalSize   int64  `json:"total_size"`   // File size in bytes
+	Downloaded  int64  `json:"downloaded"`   // Bytes downloaded
 	CompletedAt int64  `json:"completed_at"` // Unix timestamp when completed
 	TimeTaken   int64  `json:"time_taken"`   // Duration in milliseconds (for completed)
 }
