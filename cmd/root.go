@@ -205,10 +205,12 @@ func handleDownload(w http.ResponseWriter, r *http.Request, defaultOutputDir str
 		http.Error(w, "Invalid filename", http.StatusBadRequest)
 		return
 	}
-	if filepath.IsAbs(req.Path) {
-		http.Error(w, "Invalid path", http.StatusBadRequest)
+	if strings.Contains(req.Filename, "/") || strings.Contains(req.Filename, "\\") {
+		http.Error(w, "Invalid filename", http.StatusBadRequest)
 		return
 	}
+	// Absolute paths are allowed for local tool usage
+	// if filepath.IsAbs(req.Path) { ... }
 
 	// Don't default to "." here, let TUI handle it
 	// if req.Path == "" {
