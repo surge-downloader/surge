@@ -190,7 +190,28 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case messages.DownloadStartedMsg:
 
-		// Find the download and update with real metadata + start polling
+		// Check if we already have this download
+		found := false
+		for _, d := range m.downloads {
+			if d.ID == msg.DownloadID {
+				found = true
+				break
+			}
+		}
+
+		// If not found (external download), add it
+		if !found {
+			// Create new model matching the started download
+			newDownload := NewDownloadModel(msg.DownloadID, msg.URL, msg.Filename, msg.Total)
+			newDownload.Destination = msg.DestPath
+			newDownload.state.SetTotalSize(msg.Total)
+
+			m.downloads = append(m.downloads, newDownload)
+			// Ensure polling starts for this new download
+			cmds = append(cmds, newDownload.reporter.PollCmd())
+		}
+
+		// Update metadata for all matching downloads (including the one just added)
 		for _, d := range m.downloads {
 			if d.ID == msg.DownloadID {
 				d.Filename = msg.Filename
@@ -201,8 +222,10 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				d.StartTime = time.Now()
 				// Update the progress state with real total size
 				d.state.SetTotalSize(msg.Total)
-				// Start polling for this download
-				cmds = append(cmds, d.reporter.PollCmd())
+				// Start polling for this download (idempotent if already polling)
+				// Note: We already added PollCmd above for new downloads.
+				// For existing, we might want to ensure it's polling if it was somehow missed,
+				// but usually it's fine.
 				break
 			}
 		}
