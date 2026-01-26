@@ -244,16 +244,28 @@ func TUIDownload(ctx context.Context, cfg types.DownloadConfig) error {
 	}
 
 	// Choose downloader based on probe results
+	var downloadErr error
 	if probe.SupportsRange && probe.FileSize > 0 {
 		utils.Debug("Using concurrent downloader")
 		d := concurrent.NewConcurrentDownloader(cfg.ID, cfg.ProgressCh, cfg.State, cfg.Runtime)
-		return d.Download(ctx, cfg.URL, destPath, probe.FileSize, cfg.Verbose)
+		downloadErr = d.Download(ctx, cfg.URL, destPath, probe.FileSize, cfg.Verbose)
+	} else {
+		// Fallback to single-threaded downloader
+		utils.Debug("Using single-threaded downloader")
+		d := single.NewSingleDownloader(cfg.ID, cfg.ProgressCh, cfg.State, cfg.Runtime)
+		downloadErr = d.Download(ctx, cfg.URL, destPath, probe.FileSize, probe.Filename, cfg.Verbose)
 	}
 
-	// Fallback to single-threaded downloader
-	utils.Debug("Using single-threaded downloader")
-	d := single.NewSingleDownloader(cfg.ID, cfg.ProgressCh, cfg.State, cfg.Runtime)
-	return d.Download(ctx, cfg.URL, destPath, probe.FileSize, probe.Filename, cfg.Verbose)
+	if downloadErr == nil && cfg.ProgressCh != nil {
+		cfg.ProgressCh <- messages.DownloadCompleteMsg{
+			DownloadID: cfg.ID,
+			Filename:   finalFilename,
+			Elapsed:    time.Since(start),
+			Total:      probe.FileSize,
+		}
+	}
+
+	return downloadErr
 }
 
 // Download is the CLI entry point (non-TUI) - convenience wrapper
