@@ -154,7 +154,7 @@ func (p *WorkerPool) worker() {
 		p.downloads[cfg.ID] = ad
 		p.mu.Unlock()
 
-		err := TUIDownload(ctx, cfg)
+		err := TUIDownload(ctx, &ad.config)
 
 		// Check if this was a pause (not an error)
 		isPaused := cfg.State != nil && cfg.State.IsPaused()

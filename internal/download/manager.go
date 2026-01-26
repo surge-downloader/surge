@@ -174,7 +174,8 @@ func uniqueFilePath(path string) string {
 }
 
 // TUIDownload is the main entry point for TUI downloads
-func TUIDownload(ctx context.Context, cfg types.DownloadConfig) error {
+// TUIDownload is the main entry point for TUI downloads
+func TUIDownload(ctx context.Context, cfg *types.DownloadConfig) error {
 
 	// Probe server once to get all metadata
 	probe, err := probeServer(ctx, cfg.URL, cfg.Filename)
@@ -227,6 +228,9 @@ func TUIDownload(ctx context.Context, cfg types.DownloadConfig) error {
 	finalFilename := filepath.Base(destPath)
 	utils.Debug("Destination path: %s", destPath)
 
+	// Update filename in config so caller (WorkerPool) sees it
+	cfg.Filename = finalFilename
+
 	// Send download started message
 	if cfg.ProgressCh != nil {
 		cfg.ProgressCh <- messages.DownloadStartedMsg{
@@ -256,7 +260,9 @@ func TUIDownload(ctx context.Context, cfg types.DownloadConfig) error {
 		downloadErr = d.Download(ctx, cfg.URL, destPath, probe.FileSize, probe.Filename, cfg.Verbose)
 	}
 
-	if downloadErr == nil && cfg.ProgressCh != nil {
+	// Only send completion if NO error AND not paused
+	isPaused := cfg.State != nil && cfg.State.IsPaused()
+	if downloadErr == nil && !isPaused && cfg.ProgressCh != nil {
 		cfg.ProgressCh <- messages.DownloadCompleteMsg{
 			DownloadID: cfg.ID,
 			Filename:   finalFilename,
@@ -278,5 +284,5 @@ func Download(ctx context.Context, url, outPath string, verbose bool, progressCh
 		ProgressCh: progressCh,
 		State:      nil,
 	}
-	return TUIDownload(ctx, cfg)
+	return TUIDownload(ctx, &cfg)
 }
