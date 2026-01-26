@@ -190,10 +190,11 @@ func LoadMasterList() (*types.MasterList, error) {
 	for rows.Next() {
 		var e types.DownloadEntry
 		var completedAt, timeTaken sql.NullInt64 // handle nulls
+		var filename, urlHash sql.NullString     // handle nulls
 
 		if err := rows.Scan(
-			&e.ID, &e.URL, &e.DestPath, &e.Filename, &e.Status, &e.TotalSize, &e.Downloaded,
-			&completedAt, &timeTaken, &e.URLHash,
+			&e.ID, &e.URL, &e.DestPath, &filename, &e.Status, &e.TotalSize, &e.Downloaded,
+			&completedAt, &timeTaken, &urlHash,
 		); err != nil {
 			return nil, err
 		}
@@ -203,6 +204,12 @@ func LoadMasterList() (*types.MasterList, error) {
 		}
 		if timeTaken.Valid {
 			e.TimeTaken = timeTaken.Int64
+		}
+		if filename.Valid {
+			e.Filename = filename.String
+		}
+		if urlHash.Valid {
+			e.URLHash = urlHash.String
 		}
 
 		list.Downloads = append(list.Downloads, e)
@@ -266,6 +273,7 @@ func GetDownload(id string) (*types.DownloadEntry, error) {
 
 	var e types.DownloadEntry
 	var completedAt, timeTaken sql.NullInt64
+	var urlHash, filename sql.NullString
 
 	row := db.QueryRow(`
 		SELECT id, url, dest_path, filename, status, total_size, downloaded, completed_at, time_taken, url_hash 
@@ -274,8 +282,8 @@ func GetDownload(id string) (*types.DownloadEntry, error) {
 	`, id)
 
 	if err := row.Scan(
-		&e.ID, &e.URL, &e.DestPath, &e.Filename, &e.Status, &e.TotalSize, &e.Downloaded,
-		&completedAt, &timeTaken, &e.URLHash,
+		&e.ID, &e.URL, &e.DestPath, &filename, &e.Status, &e.TotalSize, &e.Downloaded,
+		&completedAt, &timeTaken, &urlHash,
 	); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil // Not found
@@ -288,6 +296,12 @@ func GetDownload(id string) (*types.DownloadEntry, error) {
 	}
 	if timeTaken.Valid {
 		e.TimeTaken = timeTaken.Int64
+	}
+	if urlHash.Valid {
+		e.URLHash = urlHash.String
+	}
+	if filename.Valid {
+		e.Filename = filename.String
 	}
 
 	return &e, nil

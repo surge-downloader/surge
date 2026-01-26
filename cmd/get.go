@@ -296,11 +296,8 @@ func handleStatusQuery(id string, portFlag int) {
 		// Fallback to SQLite
 		entry, err := state.GetDownload(id)
 		if err != nil {
-			// If not found in DB either, then it really doesn't exist
-			// But GetDownload returns nil, nil for not found (based on my implementation)
-			// Wait, I implemented it to return nil, nil if sql.ErrNoRows.
-			// Let's check error handling in GetDownload.
-			// Yes: if err == sql.ErrNoRows { return nil, nil }
+			fmt.Fprintf(os.Stderr, "Error querying database: %v\n", err)
+			os.Exit(1)
 		}
 
 		if entry == nil {

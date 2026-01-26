@@ -12,8 +12,8 @@ import (
 
 	"github.com/surge-downloader/surge/internal/clipboard"
 	"github.com/surge-downloader/surge/internal/config"
-	"github.com/surge-downloader/surge/internal/engine/state"
 	"github.com/surge-downloader/surge/internal/engine/events"
+	"github.com/surge-downloader/surge/internal/engine/state"
 	"github.com/surge-downloader/surge/internal/engine/types"
 	"github.com/surge-downloader/surge/internal/utils"
 	"github.com/surge-downloader/surge/internal/version"
@@ -317,6 +317,7 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					Filename:    d.Filename,
 					Status:      "completed",
 					TotalSize:   d.Total,
+					Downloaded:  d.Total,
 					CompletedAt: time.Now().Unix(),
 					TimeTaken:   d.Elapsed.Milliseconds(),
 				})
