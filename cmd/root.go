@@ -219,6 +219,8 @@ func handleDownload(w http.ResponseWriter, r *http.Request, defaultOutputDir str
 
 	utils.Debug("Received download request: URL=%s, Path=%s", req.URL, req.Path)
 
+	downloadID := uuid.New().String()
+
 	// HEADLESS MODE: If serverProgram is nil, we are running without TUI.
 	if serverProgram == nil {
 		go func() {
@@ -243,7 +245,10 @@ func handleDownload(w http.ResponseWriter, r *http.Request, defaultOutputDir str
 			// Increment active downloads
 			atomic.AddInt32(&activeDownloads, 1)
 
-			fmt.Printf("Starting headless download: %s -> %s\n", req.URL, outPath)
+			// Register in status registry
+			registry.Add(downloadID, req.URL)
+
+			fmt.Printf("Starting headless download: %s -> %s (ID: %s)\n", req.URL, outPath, downloadID)
 			ctx := context.Background()
 
 			// Struct for stats
@@ -257,7 +262,7 @@ func handleDownload(w http.ResponseWriter, r *http.Request, defaultOutputDir str
 			// Run download in background
 			go func() {
 				defer atomic.AddInt32(&activeDownloads, -1)
-				err := download.Download(ctx, req.URL, outPath, false, eventCh, uuid.New().String())
+				err := download.Download(ctx, req.URL, outPath, false, eventCh, downloadID)
 				errCh <- err
 				close(eventCh)
 			}()
@@ -269,19 +274,56 @@ func handleDownload(w http.ResponseWriter, r *http.Request, defaultOutputDir str
 					totalSize = m.Total
 					startTime = time.Now() // Reset start time (after probe)
 					fmt.Printf("Downloading: %s (%s)\n", m.Filename, utils.ConvertBytesToHumanReadable(totalSize))
+
+					registry.Update(downloadID, func(s *DownloadStatus) {
+						s.Status = "downloading"
+						s.Filename = m.Filename
+						s.TotalSize = totalSize
+						s.StartedAt = startTime
+					})
+
+				case messages.ProgressMsg:
+					if totalSize > 0 {
+						registry.Update(downloadID, func(s *DownloadStatus) {
+							s.Downloaded = m.Downloaded
+							s.Progress = float64(m.Downloaded) * 100 / float64(totalSize)
+							// Calc speed (simple avg)
+							if elapsed := time.Since(startTime).Seconds(); elapsed > 0 {
+								s.Speed = float64(m.Downloaded) / elapsed / (1024 * 1024)
+							}
+						})
+					}
+
 				case messages.DownloadErrorMsg:
 					fmt.Printf("Download error for %s: %v\n", req.URL, m.Err)
+					registry.Update(downloadID, func(s *DownloadStatus) {
+						s.Status = "error"
+						s.Error = m.Err.Error()
+						s.CompletedAt = time.Now()
+					})
 				}
 			}
 
 			// Check final result
 			if err := <-errCh; err != nil {
 				fmt.Printf("Download failed: %v\n", err)
+				registry.Update(downloadID, func(s *DownloadStatus) {
+					s.Status = "error"
+					s.Error = err.Error()
+					s.CompletedAt = time.Now()
+				})
 			} else {
 				elapsed := time.Since(startTime)
 				speed := float64(totalSize) / elapsed.Seconds() / (1024 * 1024)
 				fmt.Printf("Download complete: %s in %s (%.2f MB/s)\n",
 					req.URL, elapsed.Round(time.Millisecond), speed)
+
+				registry.Update(downloadID, func(s *DownloadStatus) {
+					s.Status = "completed"
+					s.Downloaded = totalSize
+					s.Progress = 100
+					s.CompletedAt = time.Now()
+				})
 			}
 		}()
 
@@ -289,11 +331,19 @@ func handleDownload(w http.ResponseWriter, r *http.Request, defaultOutputDir str
 		json.NewEncoder(w).Encode(map[string]string{
 			"status":  "started",
 			"message": "Download started in background (headless)",
+			"id":      downloadID,
 		})
 		return
 	}
 
 	// TUI MODE: Send message to TUI to start download
+	// Note: TUI ID management is separate, we'll let TUI handle its own IDs or pass this one?
+	// internal/download/types/config.go takes ID. TUI StartDownloadMsg has ID field? need to check.
+	// For now, TUI generates its own or we pass it?
+	// Looking at root.go line 273: serverProgram.Send(tui.StartDownloadMsg{ ... })
+	// We should probably add ID to StartDownloadMsg if we want consistency, but user asked for headless ID.
+	// Let's passed it if possible, but TUI might ignore it.
+
 	serverProgram.Send(tui.StartDownloadMsg{
 		URL:      req.URL,
 		Path:     req.Path,
@@ -304,6 +354,7 @@ func handleDownload(w http.ResponseWriter, r *http.Request, defaultOutputDir str
 	json.NewEncoder(w).Encode(map[string]string{
 		"status":  "queued",
 		"message": "Download request received",
+		// "id": "unknown", // TUI generates it asynchronously currently
 	})
 }
 
