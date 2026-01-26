@@ -228,6 +228,13 @@ func (p *WorkerPool) GetStatus(id string) *types.DownloadStatus {
 		status.Progress = float64(status.Downloaded) * 100 / float64(status.TotalSize)
 	}
 
+	// Calculate speed
+	downloaded, _, elapsed, _, sessionStart := state.GetProgress()
+	sessionDownloaded := downloaded - sessionStart
+	if elapsed.Seconds() > 0 && sessionDownloaded > 0 {
+		status.Speed = float64(sessionDownloaded) / elapsed.Seconds()
+	}
+
 	return status
 }
 

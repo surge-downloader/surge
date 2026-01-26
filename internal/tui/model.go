@@ -45,13 +45,6 @@ const (
 	TabDone   = 2
 )
 
-// StartDownloadMsg is sent from the HTTP server to start a new download
-type StartDownloadMsg struct {
-	URL      string
-	Path     string
-	Filename string
-}
-
 type DownloadModel struct {
 	ID          string
 	URL         string

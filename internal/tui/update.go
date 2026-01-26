@@ -187,37 +187,6 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
 	switch msg := msg.(type) {
-	case StartDownloadMsg:
-		// Handle download request from HTTP server
-		path := msg.Path
-		if path == "" {
-			path = m.Settings.General.DefaultDownloadDir
-			if path == "" {
-				path = "."
-			}
-		}
-
-		// Check if extension prompt is enabled
-		if m.Settings.General.ExtensionPrompt {
-			m.pendingURL = msg.URL
-			m.pendingPath = path
-			m.pendingFilename = msg.Filename
-			m.state = ExtensionConfirmationState
-			return m, nil
-		}
-
-		// Check for duplicate URL
-		if d := m.checkForDuplicate(msg.URL); d != nil {
-			utils.Debug("Duplicate download detected from extension: %s", msg.URL)
-			m.pendingURL = msg.URL
-			m.pendingPath = path
-			m.pendingFilename = msg.Filename
-			m.duplicateInfo = d.Filename
-			m.state = DuplicateWarningState
-			return m, nil
-		}
-
-		return m.startDownload(msg.URL, path, msg.Filename)
 
 	case messages.DownloadStartedMsg:
 
