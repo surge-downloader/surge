@@ -44,27 +44,23 @@ go build -o surge .
 
 ---
 <details><summary>
-  <h2> Operational Modes </h2>
+  <h2> Architecture & Modes </h2>
 </summary>
-Surge operates in three distinct modes depending on your workflow needs:
 
-### 1. TUI Mode (Interactive)
+Surge employs a **Strict Single Instance Architecture** to ensure data integrity and efficient resource usage.
 
-The default mode. Launches a full-screen, interactive dashboard to manage downloads, view real-time graphs, and manage the queue.
+### 1. The Engine (Host)
+Only **one** instance of Surge runs at a time (the "Host"). This instance holds the lock file (`~/.surge/surge.lock`) and manages all downloads.
+- **TUI Mode**: Starts the interactive dashboard.
+- **Headless Mode**: Starts as a background daemon (`surge --headless`).
 
-* **Best for:** Daily usage, visual monitoring.
+### 2. The Client (CLI)
+If you run `surge` or `surge get` while another instance is running, it automatically acts as a **Client**.
+- It detects the running Host.
+- Offloads the download request to the Host via HTTP.
+- Exits immediately (fire-and-forget) or waits if acting as a temporary host.
 
-### 2. Headless Mode (Server/Daemon)
-
-Runs Surge in the background without a user interface. It listens on a specific port for incoming download requests from the CLI or Browser Extension.
-
-* **Best for:** Raspberry Pis, VPS, always-on servers, or background tasks.
-
-### 3. CLI Mode (Client & Automation)
-
-Allows you to send commands to a running instance (TUI or Headless) or perform quick, standalone downloads similar to `wget` or `curl`.
-
-* **Best for:** Scripts, batch processing, single-file downloads.
+This means you can open multiple terminals and queue downloads freely; they will all be managed by the single active engine.
 </details>
 
 ---
