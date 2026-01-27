@@ -145,10 +145,12 @@ func startTUI(port int) {
 	p := tea.NewProgram(m, tea.WithAltScreen())
 	serverProgram = p // Save reference for HTTP handler
 
-	// Start server in background
-	// The HTTP server is already started in rootCmd.Run before this function is called.
-	// This line is redundant and would attempt to start another server or fail.
-	// go startHTTPServer(nil, port, "") // listener passed as nil to provoke findAvailablePort if needed
+	// Background listener for progress events
+	go func() {
+		for msg := range GlobalProgressCh {
+			p.Send(msg)
+		}
+	}()
 
 	// Run TUI
 	if _, err := p.Run(); err != nil {

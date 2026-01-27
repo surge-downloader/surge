@@ -277,7 +277,7 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// Add log entry
 		m.addLogEntry(LogStyleStarted.Render("⬇ Started: " + msg.Filename))
-		cmds = append(cmds, listenForActivity(m.progressChan))
+		return m, tea.Batch(cmds...)
 
 	case events.ProgressMsg:
 		// Progress from polling reporter
@@ -369,7 +369,7 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// Update list items
 		m.UpdateListItems()
-		cmds = append(cmds, listenForActivity(m.progressChan))
+		return m, tea.Batch(cmds...)
 
 	case events.DownloadErrorMsg:
 		for _, d := range m.downloads {
@@ -382,7 +382,7 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		m.UpdateListItems()
-		cmds = append(cmds, listenForActivity(m.progressChan))
+		return m, nil
 
 	case events.DownloadPausedMsg:
 		for _, d := range m.downloads {
@@ -396,7 +396,7 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		m.UpdateListItems()
-		cmds = append(cmds, listenForActivity(m.progressChan))
+		return m, nil
 
 	case events.DownloadResumedMsg:
 		for _, d := range m.downloads {
@@ -410,7 +410,7 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		m.UpdateListItems()
-		cmds = append(cmds, listenForActivity(m.progressChan))
+		return m, nil
 
 	case tea.WindowSizeMsg:
 		m.width = msg.Width

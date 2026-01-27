@@ -279,18 +279,11 @@ func InitialRootModel(serverPort int, currentVersion string, pool *download.Work
 }
 
 func (m RootModel) Init() tea.Cmd {
-	cmds := []tea.Cmd{listenForActivity(m.progressChan)}
 	// Trigger update check if not disabled in settings
 	if !m.Settings.General.SkipUpdateCheck {
-		cmds = append(cmds, checkForUpdateCmd(m.CurrentVersion))
+		return checkForUpdateCmd(m.CurrentVersion)
 	}
-	return tea.Batch(cmds...)
-}
-
-func listenForActivity(sub chan any) tea.Cmd {
-	return func() tea.Msg {
-		return <-sub
-	}
+	return nil
 }
 
 // Helper to get downloads for the current tab
