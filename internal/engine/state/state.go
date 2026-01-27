@@ -325,7 +325,6 @@ func LoadPausedDownloads() ([]types.DownloadEntry, error) {
 }
 
 // LoadCompletedDownloads returns all completed downloads
-// LoadCompletedDownloads returns all completed downloads
 func LoadCompletedDownloads() ([]types.DownloadEntry, error) {
 	list, err := LoadMasterList()
 	if err != nil {

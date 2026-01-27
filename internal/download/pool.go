@@ -46,7 +46,6 @@ func (p *WorkerPool) Add(cfg types.DownloadConfig) {
 }
 
 // HasDownload checks if a download with the given URL already exists
-// HasDownload checks if a download with the given URL already exists
 func (p *WorkerPool) HasDownload(url string) bool {
 	p.mu.RLock()
 	// Check active downloads
