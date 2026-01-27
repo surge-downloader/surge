@@ -152,12 +152,15 @@ func (m RootModel) checkForDuplicate(url string) *DownloadModel {
 }
 
 // startDownload initiates a new download
-func (m RootModel) startDownload(url, path, filename string) (RootModel, tea.Cmd) {
+func (m RootModel) startDownload(url, path, filename, id string) (RootModel, tea.Cmd) {
 	// Generate unique filename to avoid overwriting
 	// Note: We do this check here because it applies to ALL new downloads
 	finalFilename := m.generateUniqueFilename(path, filename)
 
-	nextID := uuid.New().String()
+	nextID := id
+	if nextID == "" {
+		nextID = uuid.New().String()
+	}
 	newDownload := NewDownloadModel(nextID, url, "Queued", 0)
 	m.downloads = append(m.downloads, newDownload)
 
@@ -225,7 +228,9 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Fallback: Just start it if for some reason we got here without needing a prompt
 		// (Should not happen given root.go logic, but safe fallback)
-		return m.startDownload(msg.URL, path, msg.Filename)
+		// Fallback: Just start it if for some reason we got here without needing a prompt
+		// (Should not happen given root.go logic, but safe fallback)
+		return m.startDownload(msg.URL, path, msg.Filename, msg.ID)
 
 	case events.DownloadStartedMsg:
 
@@ -836,7 +841,8 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 
 				m.state = DashboardState
-				return m.startDownload(url, path, filename)
+				m.state = DashboardState
+				return m.startDownload(url, path, filename, "")
 			}
 
 			// Up/Down navigation between inputs
@@ -947,7 +953,9 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if key.Matches(msg, m.keys.Duplicate.Continue) {
 				// Continue anyway - startDownload handles unique filename generation
 				m.state = DashboardState
-				return m.startDownload(m.pendingURL, m.pendingPath, m.pendingFilename)
+				// Continue anyway - startDownload handles unique filename generation
+				m.state = DashboardState
+				return m.startDownload(m.pendingURL, m.pendingPath, m.pendingFilename, "")
 			}
 			if key.Matches(msg, m.keys.Duplicate.Cancel) {
 				// Cancel - don't add
@@ -979,7 +987,9 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 				// No duplicate (or warning disabled) - add to queue
 				m.state = DashboardState
-				return m.startDownload(m.pendingURL, m.pendingPath, m.pendingFilename)
+				// No duplicate (or warning disabled) - add to queue
+				m.state = DashboardState
+				return m.startDownload(m.pendingURL, m.pendingPath, m.pendingFilename, "")
 			}
 			if key.Matches(msg, m.keys.Extension.No) {
 				// Cancelled
@@ -1060,7 +1070,7 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						skipped++
 						continue
 					}
-					m, _ = m.startDownload(url, path, "")
+					m, _ = m.startDownload(url, path, "", "")
 					added++
 				}
 
