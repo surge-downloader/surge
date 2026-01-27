@@ -219,6 +219,70 @@ func startHTTPServer(ln net.Listener, port int, defaultOutputDir string) {
 		handleDownload(w, r, defaultOutputDir)
 	})
 
+	// Pause endpoint
+	mux.HandleFunc("/pause", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		id := r.URL.Query().Get("id")
+		if id == "" {
+			http.Error(w, "Missing id parameter", http.StatusBadRequest)
+			return
+		}
+		if GlobalPool != nil {
+			GlobalPool.Pause(id)
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]string{"status": "paused", "id": id})
+		} else {
+			http.Error(w, "Server internal error: pool not initialized", http.StatusInternalServerError)
+		}
+	})
+
+	// Resume endpoint
+	mux.HandleFunc("/resume", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		id := r.URL.Query().Get("id")
+		if id == "" {
+			http.Error(w, "Missing id parameter", http.StatusBadRequest)
+			return
+		}
+		if GlobalPool != nil {
+			GlobalPool.Resume(id)
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]string{"status": "resumed", "id": id})
+		} else {
+			http.Error(w, "Server internal error: pool not initialized", http.StatusInternalServerError)
+		}
+	})
+
+	// Delete endpoint
+	mux.HandleFunc("/delete", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodDelete && r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		id := r.URL.Query().Get("id")
+		if id == "" {
+			http.Error(w, "Missing id parameter", http.StatusBadRequest)
+			return
+		}
+		if GlobalPool != nil {
+			GlobalPool.Cancel(id)
+			// Ensure removed from DB as well
+			if err := state.RemoveFromMasterList(id); err != nil {
+				utils.Debug("Failed to remove from DB: %v", err)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]string{"status": "deleted", "id": id})
+		} else {
+			http.Error(w, "Server internal error: pool not initialized", http.StatusInternalServerError)
+		}
+	})
+
 	server := &http.Server{Handler: corsMiddleware(mux)}
 	if err := server.Serve(ln); err != nil && err != http.ErrServerClosed {
 		utils.Debug("HTTP server error: %v", err)
@@ -375,6 +439,7 @@ func handleDownload(w http.ResponseWriter, r *http.Request, defaultOutputDir str
 
 			// Send request to TUI
 			GlobalProgressCh <- events.DownloadRequestMsg{
+				ID:       downloadID,
 				URL:      req.URL,
 				Filename: req.Filename,
 				Path:     outPath, // Use the path we resolved (default or requested)

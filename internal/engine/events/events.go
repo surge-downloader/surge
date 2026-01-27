@@ -51,6 +51,7 @@ type DownloadResumedMsg struct {
 // DownloadRequestMsg signals a request to start a download (e.g. from extension)
 // that may need user confirmation or duplicate checking
 type DownloadRequestMsg struct {
+	ID       string
 	URL      string
 	Filename string
 	Path     string

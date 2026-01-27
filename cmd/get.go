@@ -6,15 +6,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"os"
-	"os/signal"
 	"path/filepath"
 	"strings"
-	"sync/atomic"
-	"syscall"
-	"time"
 
 	"github.com/surge-downloader/surge/internal/config"
 	"github.com/surge-downloader/surge/internal/engine/state"
@@ -101,145 +96,51 @@ var getCmd = &cobra.Command{
 
 Use --port to send the download to a running Surge instance.
 Use --batch to download multiple URLs from a file (one URL per line).`,
-	Args: cobra.MaximumNArgs(1),
+	Args: cobra.RangeArgs(1, 2),
 	Run: func(cmd *cobra.Command, args []string) {
 		initializeGlobalState()
 
-		idFlag, _ := cmd.Flags().GetString("id")
 		outPath, _ := cmd.Flags().GetString("output")
-		// verbose, _ := cmd.Flags().GetBool("verbose")
 		portFlag, _ := cmd.Flags().GetInt("port")
 		batchFile, _ := cmd.Flags().GetString("batch")
 
-		// 1. Handle Status Query (--id)
-		if idFlag != "" {
-			handleStatusQuery(idFlag, portFlag)
-			return
-		}
-
-		// 2. Handle Download Queueing
-		// Collect URLs to download
-		var urls []string
+		// 1. Handle Batch Mode (flags only)
 		if batchFile != "" {
-			// Batch mode: read URLs from file
+			var urls []string
 			var err error
 			urls, err = readURLsFromFile(batchFile)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 				os.Exit(1)
 			}
-			seen := make(map[string]bool)
-			uniqueURLs := make([]string, 0, len(urls))
-			for _, url := range urls {
-				normalized := strings.TrimRight(url, "/")
-				if !seen[normalized] {
-					seen[normalized] = true
-					uniqueURLs = append(uniqueURLs, url)
-				}
-			}
-			urls = uniqueURLs
-		} else if len(args) == 1 {
-			urls = []string{args[0]}
-		} else {
-			fmt.Fprintf(os.Stderr, "Error: requires either a URL argument or --batch flag (or --id to query status)\n")
-			os.Exit(1)
+			processDownloads(urls, outPath, portFlag)
+			return
 		}
 
-		// Try to acquire lock
-		isMaster, err := AcquireLock()
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error checking lock: %v\n", err)
-			os.Exit(1)
-		}
+		// 2. Handle Positional Arguments
+		if len(args) == 2 {
+			id := args[0]
+			action := strings.ToLower(args[1])
 
-		var targetPort int
-
-		if isMaster {
-			defer ReleaseLock()
-			// We are the master. Start the server.
-			var ln net.Listener
-			if portFlag > 0 {
-				targetPort = portFlag
-				ln, err = net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", targetPort))
-			} else {
-				targetPort, ln = findAvailablePort(8080)
-			}
-
-			if err != nil || ln == nil {
-				fmt.Fprintf(os.Stderr, "Error starting server: %v\n", err)
-				os.Exit(1)
-			}
-
-			saveActivePort(targetPort)
-			defer removeActivePort()
-
-			// Start server in background
-			go startHTTPServer(ln, targetPort, outPath)
-
-			fmt.Printf("Surge %s (Headless Host) running on port %d\n", Version, targetPort)
-
-			// Start consuming progress messages
-			StartHeadlessConsumer()
-		} else {
-			// We are the client. Find the master's port.
-			if portFlag > 0 {
-				targetPort = portFlag
-			} else {
-				// Read port file
-				targetPort = readActivePort()
-			}
-		}
-
-		// Send downloads to targetPort
-		var failed int
-		for i, url := range urls {
-			if len(urls) > 1 {
-				fmt.Fprintf(os.Stderr, "\n[%d/%d] %s\n", i+1, len(urls), url)
-			}
-
-			reqPath := outPath
-			if reqPath == "" && isMaster {
-				reqPath = ""
-			}
-
-			if err := sendToServer(url, reqPath, targetPort); err != nil {
-				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-				failed++
-			}
-		}
-
-		if !isMaster {
-			if failed > 0 {
+			switch action {
+			case "info":
+				handleStatusQuery(id, portFlag)
+			case "pause":
+				handleAction(id, "pause", portFlag)
+			case "resume":
+				handleAction(id, "resume", portFlag)
+			case "delete":
+				handleAction(id, "delete", portFlag)
+			default:
+				fmt.Fprintf(os.Stderr, "Error: invalid action '%s'. Valid actions are: info, pause, resume, delete\n", action)
 				os.Exit(1)
 			}
 			return
 		}
 
-		// Master mode: Wait for downloads to finish
-		time.Sleep(500 * time.Millisecond)
-
-		// Wait Loop
-		ticker := time.NewTicker(500 * time.Millisecond)
-		defer ticker.Stop()
-
-		sigChan := make(chan os.Signal, 1)
-		signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
-
-		fmt.Println("Waiting for downloads to complete... (Ctrl+C to stop)")
-
-		for {
-			select {
-			case <-sigChan:
-				fmt.Println("\nStopping...")
-				return
-			case <-ticker.C:
-				current := atomic.LoadInt32(&activeDownloads)
-				if current == 0 {
-					fmt.Println("All downloads complete. Exiting.")
-					return
-				}
-			}
-		}
+		// 3. Handle Single URL Download
+		url := args[0]
+		processDownloads([]string{url}, outPath, portFlag)
 	},
 }
 
@@ -248,7 +149,6 @@ func init() {
 	getCmd.Flags().BoolP("verbose", "v", false, "verbose output")
 	getCmd.Flags().IntP("port", "p", 0, "send to running surge server on this port")
 	getCmd.Flags().StringP("batch", "b", "", "file containing URLs to download (one per line)")
-	getCmd.Flags().String("id", "", "get status of a specific download by ID")
 }
 
 func readActivePort() int {
@@ -261,6 +161,89 @@ func readActivePort() int {
 	var port int
 	fmt.Sscanf(string(data), "%d", &port)
 	return port
+}
+
+func handleAction(id string, action string, portFlag int) {
+	// Need to find running instance port
+	port := portFlag
+	surgeRunning := false
+
+	if port == 0 {
+		isMaster, err := AcquireLock()
+		if err == nil && isMaster {
+			ReleaseLock()
+			surgeRunning = false
+		} else {
+			surgeRunning = true
+			port = readActivePort()
+		}
+	} else {
+		surgeRunning = true
+	}
+
+	if surgeRunning {
+		url := fmt.Sprintf("http://127.0.0.1:%d/%s?id=%s", port, action, id)
+		method := http.MethodPost
+		if action == "delete" {
+			// server handler also accepts POST, but let's try to be proper or just use POST as implemented in root
+			method = http.MethodPost
+		}
+
+		req, err := http.NewRequest(method, url, nil)
+		if err != nil {
+			fmt.Printf("Failed to create request: %v\n", err)
+			os.Exit(1)
+		}
+
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			fmt.Printf("Failed to connect to server: %v\n", err)
+			os.Exit(1)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode == http.StatusOK {
+			fmt.Printf("Download %s action successful for ID: %s\n", action, id)
+		} else {
+			body, _ := io.ReadAll(resp.Body)
+			fmt.Printf("Failed to %s download: %s - %s\n", action, resp.Status, string(body))
+			os.Exit(1)
+		}
+		return
+	}
+
+	// Offline handling
+	if action == "delete" {
+		if err := state.RemoveFromMasterList(id); err != nil {
+			fmt.Printf("Error deleting download: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("Download deleted (offline).\n")
+		return
+	}
+
+	// For pause/resume, we need to fetch, update, and save
+	entry, err := state.GetDownload(id)
+	if err != nil {
+		fmt.Printf("Error: %v\n", err)
+		os.Exit(1)
+	}
+	if entry == nil {
+		fmt.Printf("Download ID %s not found.\n", id)
+		os.Exit(1)
+	}
+
+	if action == "pause" {
+		entry.Status = "paused"
+	} else if action == "resume" {
+		entry.Status = "queued"
+	}
+
+	if err := state.AddToMasterList(*entry); err != nil {
+		fmt.Printf("Error updating state: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Printf("Download %sd (offline).\n", action)
 }
 
 func handleStatusQuery(id string, portFlag int) {
