@@ -238,3 +238,257 @@ func TestSingleDownloader_NilState(t *testing.T) {
 		t.Error(err)
 	}
 }
+
+// =============================================================================
+// Restored Standard Tests
+// =============================================================================
+
+func TestNewSingleDownloader(t *testing.T) {
+	state := types.NewProgressState("test", 1000)
+	runtime := &types.RuntimeConfig{}
+
+	downloader := NewSingleDownloader("test-id", nil, state, runtime)
+
+	if downloader == nil {
+		t.Fatal("NewSingleDownloader returned nil")
+	}
+	if downloader.ID != "test-id" {
+		t.Errorf("ID mismatch: got %s, want test-id", downloader.ID)
+	}
+	if downloader.State != state {
+		t.Error("State not set correctly")
+	}
+}
+
+func TestSingleDownloader_Download_Success(t *testing.T) {
+	tmpDir, cleanup, err := testutil.TempDir("surge-single-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+
+	fileSize := int64(64 * 1024) // 64KB
+	server := testutil.NewMockServer(
+		testutil.WithFileSize(fileSize),
+		testutil.WithRangeSupport(false), // SingleDownloader doesn't use ranges
+		testutil.WithFilename("single_test.bin"),
+	)
+	defer server.Close()
+
+	destPath := filepath.Join(tmpDir, "single_test.bin")
+	state := types.NewProgressState("single-test", fileSize)
+	runtime := &types.RuntimeConfig{WorkerBufferSize: 8 * types.KB}
+
+	downloader := NewSingleDownloader("single-id", nil, state, runtime)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	err = downloader.Download(ctx, server.URL(), destPath, fileSize, "single_test.bin", false)
+	if err != nil {
+		t.Fatalf("Download failed: %v", err)
+	}
+
+	// Verify file exists and has correct size
+	if err := testutil.VerifyFileSize(destPath, fileSize); err != nil {
+		t.Error(err)
+	}
+
+	// Verify .surge file was removed
+	surgeFile := destPath + types.IncompleteSuffix
+	if testutil.FileExists(surgeFile) {
+		t.Error(".surge file should be removed after successful download")
+	}
+
+	// Verify progress was tracked
+	if state.Downloaded.Load() != fileSize {
+		t.Errorf("Downloaded %d != fileSize %d", state.Downloaded.Load(), fileSize)
+	}
+}
+
+func TestSingleDownloader_Download_Cancellation(t *testing.T) {
+	tmpDir, cleanup, _ := testutil.TempDir("surge-cancel-single")
+	defer cleanup()
+
+	// Large file with latency
+	fileSize := int64(5 * types.MB)
+	server := testutil.NewMockServer(
+		testutil.WithFileSize(fileSize),
+		testutil.WithRangeSupport(false),
+		testutil.WithByteLatency(500*time.Microsecond),
+	)
+	defer server.Close()
+
+	destPath := filepath.Join(tmpDir, "cancel_single.bin")
+	state := types.NewProgressState("cancel-single", fileSize)
+	runtime := &types.RuntimeConfig{}
+
+	downloader := NewSingleDownloader("cancel-id", nil, state, runtime)
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	done := make(chan error)
+	go func() {
+		done <- downloader.Download(ctx, server.URL(), destPath, fileSize, "cancel.bin", false)
+	}()
+
+	// Cancel after a short delay
+	time.Sleep(100 * time.Millisecond)
+	cancel()
+
+	select {
+	case err := <-done:
+		// Accept context.Canceled or wrapped errors
+		if err != nil && err != context.Canceled && err.Error() != "context canceled" {
+			t.Logf("Expected context.Canceled, got: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Download didn't respond to cancellation")
+	}
+}
+
+func TestSingleDownloader_Download_ProgressTracking(t *testing.T) {
+	tmpDir, cleanup, _ := testutil.TempDir("surge-progress-single")
+	defer cleanup()
+
+	fileSize := int64(256 * types.KB)
+	server := testutil.NewMockServer(
+		testutil.WithFileSize(fileSize),
+		testutil.WithRangeSupport(false),
+		testutil.WithByteLatency(5*time.Microsecond), // Slow down to allow progress monitoring
+	)
+	defer server.Close()
+
+	destPath := filepath.Join(tmpDir, "progress_single.bin")
+	state := types.NewProgressState("progress-single", fileSize)
+	runtime := &types.RuntimeConfig{WorkerBufferSize: 16 * types.KB}
+
+	downloader := NewSingleDownloader("progress-id", nil, state, runtime)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	err := downloader.Download(ctx, server.URL(), destPath, fileSize, "progress.bin", false)
+
+	if err != nil {
+		t.Fatalf("Download failed: %v", err)
+	}
+
+	// Verify final progress equals file size
+	finalProgress := state.Downloaded.Load()
+	if finalProgress != fileSize {
+		t.Errorf("Final progress %d != file size %d", finalProgress, fileSize)
+	}
+}
+
+func TestSingleDownloader_Download_ServerError(t *testing.T) {
+	tmpDir, cleanup, _ := testutil.TempDir("surge-error-single")
+	defer cleanup()
+
+	// Server that fails on first request
+	server := testutil.NewMockServer(
+		testutil.WithFileSize(1024),
+		testutil.WithFailOnNthRequest(1),
+	)
+	defer server.Close()
+
+	destPath := filepath.Join(tmpDir, "error_single.bin")
+	state := types.NewProgressState("error-single", 1024)
+	runtime := &types.RuntimeConfig{}
+
+	downloader := NewSingleDownloader("error-id", nil, state, runtime)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	err := downloader.Download(ctx, server.URL(), destPath, 1024, "error.bin", false)
+	if err == nil {
+		t.Error("Expected error from failed server")
+	}
+}
+
+func TestSingleDownloader_Download_WithLatency(t *testing.T) {
+	tmpDir, cleanup, _ := testutil.TempDir("surge-latency-single")
+	defer cleanup()
+
+	fileSize := int64(32 * types.KB)
+	server := testutil.NewMockServer(
+		testutil.WithFileSize(fileSize),
+		testutil.WithRangeSupport(false),
+		testutil.WithLatency(100*time.Millisecond),
+	)
+	defer server.Close()
+
+	destPath := filepath.Join(tmpDir, "latency_single.bin")
+	state := types.NewProgressState("latency-single", fileSize)
+	runtime := &types.RuntimeConfig{}
+
+	downloader := NewSingleDownloader("latency-id", nil, state, runtime)
+
+	start := time.Now()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	err := downloader.Download(ctx, server.URL(), destPath, fileSize, "latency.bin", false)
+	elapsed := time.Since(start)
+
+	if err != nil {
+		t.Fatalf("Download failed: %v", err)
+	}
+
+	if elapsed < 100*time.Millisecond {
+		t.Errorf("Download completed too fast (%v), latency not applied", elapsed)
+	}
+
+	if err := testutil.VerifyFileSize(destPath, fileSize); err != nil {
+		t.Error(err)
+	}
+}
+
+func TestSingleDownloader_Download_ContentIntegrity(t *testing.T) {
+	tmpDir, cleanup, _ := testutil.TempDir("surge-content-single")
+	defer cleanup()
+
+	fileSize := int64(64 * types.KB)
+	server := testutil.NewMockServer(
+		testutil.WithFileSize(fileSize),
+		testutil.WithRangeSupport(false),
+		testutil.WithRandomData(true),
+	)
+	defer server.Close()
+
+	destPath := filepath.Join(tmpDir, "content_single.bin")
+	state := types.NewProgressState("content-single", fileSize)
+	runtime := &types.RuntimeConfig{}
+
+	downloader := NewSingleDownloader("content-id", nil, state, runtime)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	err := downloader.Download(ctx, server.URL(), destPath, fileSize, "content.bin", false)
+	if err != nil {
+		t.Fatalf("Download failed: %v", err)
+	}
+
+	if err := testutil.VerifyFileSize(destPath, fileSize); err != nil {
+		t.Error(err)
+	}
+
+	// Verify content is not all zeros (random data was used)
+	chunk, err := testutil.ReadFileChunk(destPath, 0, 1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	allZero := true
+	for _, b := range chunk {
+		if b != 0 {
+			allZero = false
+			break
+		}
+	}
+	if allZero {
+		t.Error("Content should not be all zeros with random data")
+	}
+}

@@ -136,6 +136,9 @@ func TestSizeConstants(t *testing.T) {
 	if AlignSize <= 0 {
 		t.Errorf("AlignSize = %d, should be positive", AlignSize)
 	}
+	if AlignSize&(AlignSize-1) != 0 {
+		t.Error("AlignSize should be a power of 2")
+	}
 }
 
 func TestTimeoutConstants(t *testing.T) {
@@ -161,5 +164,59 @@ func TestTimeoutConstants(t *testing.T) {
 		if timeout > 5*time.Minute {
 			t.Errorf("%s = %v, seems too long", name, timeout)
 		}
+	}
+}
+
+func TestConnectionLimits(t *testing.T) {
+	if PerHostMax <= 0 {
+		t.Error("PerHostMax should be positive")
+	}
+	if PerHostMax > 256 {
+		t.Error("PerHostMax seems too high")
+	}
+	// Check DefaultMaxIdleConns if available (int type)
+	if DefaultMaxIdleConns <= 0 {
+		t.Error("DefaultMaxIdleConns should be positive")
+	}
+}
+
+func TestChannelBufferSizes(t *testing.T) {
+	if ProgressChannelBuffer <= 0 {
+		t.Error("ProgressChannelBuffer should be positive")
+	}
+}
+
+func TestDownloadConfig_Fields(t *testing.T) {
+	state := NewProgressState("test", 1000)
+	runtime := &RuntimeConfig{MaxConnectionsPerHost: 8}
+
+	cfg := DownloadConfig{
+		URL:        "https://example.com/file.zip",
+		OutputPath: "/tmp/file.zip",
+		ID:         "download-123",
+		Filename:   "file.zip",
+		Verbose:    true,
+		ProgressCh: nil,
+		State:      state,
+		Runtime:    runtime,
+	}
+
+	if cfg.URL != "https://example.com/file.zip" {
+		t.Error("URL not set correctly")
+	}
+	if cfg.OutputPath != "/tmp/file.zip" {
+		t.Error("OutputPath not set correctly")
+	}
+	if cfg.ID != "download-123" {
+		t.Error("ID not set correctly")
+	}
+	if !cfg.Verbose {
+		t.Error("Verbose not set correctly")
+	}
+	if cfg.State != state {
+		t.Error("State not set correctly")
+	}
+	if cfg.Runtime != runtime {
+		t.Error("Runtime not set correctly")
 	}
 }
