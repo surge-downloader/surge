@@ -124,6 +124,10 @@ var rootCmd = &cobra.Command{
 			<-sigChan
 
 			fmt.Println("\nShutting down...")
+			if GlobalPool != nil {
+				GlobalPool.GracefulShutdown()
+			}
+
 		} else {
 			startTUI(port)
 		}
