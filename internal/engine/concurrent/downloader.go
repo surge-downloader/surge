@@ -398,6 +398,15 @@ func (d *ConcurrentDownloader) Download(ctx context.Context, rawurl, destPath st
 
 	// Rename from .surge to final destination
 	if err := os.Rename(workingPath, destPath); err != nil {
+		// Check for race condition: did someone else already rename it?
+		if os.IsNotExist(err) {
+			if info, statErr := os.Stat(destPath); statErr == nil && info.Size() == fileSize {
+				utils.Debug("Race condition detected: File already exists and has correct size. Treating as success.")
+				// Clean up state just in case, though usually done by caller
+				_ = state.DeleteState(d.ID, d.URL, destPath)
+				return nil
+			}
+		}
 		return fmt.Errorf("failed to rename completed file: %w", err)
 	}
 
