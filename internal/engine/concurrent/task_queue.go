@@ -106,7 +106,8 @@ func (q *TaskQueue) SplitLargestIfNeeded() bool {
 	// Find largest queued task
 	idx := -1
 	var maxLen int64 = 0
-	for i, t := range q.tasks {
+	for i := q.head; i < len(q.tasks); i++ {
+		t := q.tasks[i]
 		if t.Length > maxLen && t.Length > 2*types.MinChunk {
 			maxLen = t.Length
 			idx = i
