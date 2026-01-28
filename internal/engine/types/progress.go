@@ -16,10 +16,12 @@ type ProgressState struct {
 	Done          atomic.Bool
 	Error         atomic.Pointer[error]
 	Paused        atomic.Bool
+	Pausing       atomic.Bool // Intermediate state: Pause requested but workers not yet exited
 	CancelFunc    context.CancelFunc
 
-	SessionStartBytes int64      // SessionStartBytes tracks how many bytes were already downloaded when the current session started
-	mu                sync.Mutex // Protects TotalSize, StartTime, SessionStartBytes
+	SessionStartBytes int64         // SessionStartBytes tracks how many bytes were already downloaded when the current session started
+	SavedElapsed      time.Duration // Time spent in previous sessions
+	mu                sync.Mutex    // Protects TotalSize, StartTime, SessionStartBytes, SavedElapsed
 }
 
 func NewProgressState(id string, totalSize int64) *ProgressState {
@@ -81,4 +83,18 @@ func (ps *ProgressState) Resume() {
 
 func (ps *ProgressState) IsPaused() bool {
 	return ps.Paused.Load()
+}
+
+func (ps *ProgressState) SetPausing(pausing bool) {
+	ps.Pausing.Store(pausing)
+}
+
+func (ps *ProgressState) IsPausing() bool {
+	return ps.Pausing.Load()
+}
+
+func (ps *ProgressState) SetSavedElapsed(d time.Duration) {
+	ps.mu.Lock()
+	defer ps.mu.Unlock()
+	ps.SavedElapsed = d
 }

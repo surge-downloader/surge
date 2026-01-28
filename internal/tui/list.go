@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/surge-downloader/surge/internal/tui/colors"
 	"github.com/surge-downloader/surge/internal/tui/components"
 	"github.com/surge-downloader/surge/internal/utils"
 
@@ -26,8 +27,13 @@ func (i DownloadItem) Description() string {
 	d := i.download
 
 	// Get styled status using the shared component
-	status := components.DetermineStatus(d.done, d.paused, d.err != nil, d.Speed, d.Downloaded)
-	styledStatus := status.Render()
+	var styledStatus string
+	if d.pausing {
+		// Custom "Pausing..." style using existing colors
+		styledStatus = lipgloss.NewStyle().Foreground(colors.StatePaused).Render("⏸ Pausing...")
+	} else {
+		styledStatus = components.DetermineStatus(d.done, d.paused, d.err != nil, d.Speed, d.Downloaded).Render()
+	}
 
 	// Build progress info
 	pct := 0.0

@@ -3,10 +3,12 @@ package download
 import (
 	"context"
 	"sync"
+	"time"
 
 	"github.com/surge-downloader/surge/internal/engine/events"
 	"github.com/surge-downloader/surge/internal/engine/state"
 	"github.com/surge-downloader/surge/internal/engine/types"
+	"github.com/surge-downloader/surge/internal/utils"
 )
 
 // activeDownload tracks a download that's currently running
@@ -84,6 +86,7 @@ func (p *WorkerPool) Pause(downloadID string) {
 
 	// Set paused flag and cancel context
 	if ad.config.State != nil {
+		ad.config.State.SetPausing(true) // Mark as transitioning to pause
 		ad.config.State.Pause()
 	}
 
@@ -105,8 +108,8 @@ func (p *WorkerPool) PauseAll() {
 	p.mu.RLock()
 	ids := make([]string, 0, len(p.downloads)) //This stores the uuids of the downloads to be paused
 	for id, ad := range p.downloads {
-		// Only pause downloads that are actually active (not already paused or done)
-		if ad != nil && ad.config.State != nil && !ad.config.State.IsPaused() && !ad.config.State.Done.Load() {
+		// Only pause downloads that are actually active (not already paused or done or pausing)
+		if ad != nil && ad.config.State != nil && !ad.config.State.IsPaused() && !ad.config.State.Done.Load() && !ad.config.State.IsPausing() {
 			ids = append(ids, id)
 		}
 	}
@@ -187,10 +190,21 @@ func (p *WorkerPool) worker() {
 
 		err := TUIDownload(ctx, &ad.config)
 
-		// Check if this was a pause (not an error)
-		isPaused := cfg.State != nil && cfg.State.IsPaused()
+		// Logic:
+		// 1. If Pause() was called: State.IsPaused() is true. We keep the task in p.downloads (so it can be resumed).
+		// 2. If finished/error: We remove from p.downloads.
 
-		if err != nil && !isPaused {
+		isPaused := ad.config.State != nil && ad.config.State.IsPaused()
+
+		// Clear "Pausing" transition state now that worker has exited
+		if ad.config.State != nil {
+			ad.config.State.SetPausing(false)
+		}
+
+		if isPaused {
+			utils.Debug("WorkerPool: Download %s paused cleanly", cfg.ID)
+			// If paused, we keep it in downloads map for potential resume
+		} else if err != nil {
 			if cfg.State != nil {
 				cfg.State.SetError(err)
 			}
@@ -255,7 +269,9 @@ func (p *WorkerPool) GetStatus(id string) *types.DownloadStatus {
 		Status:     "downloading",
 	}
 
-	if state.IsPaused() {
+	if ad.config.State.IsPausing() {
+		status.Status = "pausing"
+	} else if ad.config.State.IsPaused() {
 		status.Status = "paused"
 	} else if state.Done.Load() {
 		status.Status = "completed"
@@ -286,5 +302,38 @@ func (p *WorkerPool) GetStatus(id string) *types.DownloadStatus {
 func (p *WorkerPool) GracefulShutdown() {
 	// ... existing implementation
 	p.PauseAll()
+
+	// Wait for any downloads in "Pausing" state to finish transitioning
+	// This ensures we don't exit while a database write is pending/active
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		p.mu.RLock()
+		stillPausing := false
+		for _, ad := range p.downloads {
+			if ad.config.State != nil && ad.config.State.IsPausing() {
+				stillPausing = true
+				break
+			}
+		}
+		p.mu.RUnlock()
+
+		if !stillPausing {
+			break
+		}
+
+		select {
+		case <-ctx.Done():
+			utils.Debug("GracefulShutdown: timed out waiting for downloads to pause")
+			break
+		case <-ticker.C:
+			continue
+		}
+	}
+
 	p.wg.Wait() // Blocks until all workers call Done()
 }

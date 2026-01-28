@@ -39,8 +39,8 @@ func SaveState(url string, destPath string, state *types.DownloadState) error {
 		// 1. Upsert into downloads table
 		_, err := tx.Exec(`
 			INSERT INTO downloads (
-				id, url, dest_path, filename, status, total_size, downloaded, url_hash, created_at, paused_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				id, url, dest_path, filename, status, total_size, downloaded, url_hash, created_at, paused_at, time_taken
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT(id) DO UPDATE SET
 				url=excluded.url,
 				dest_path=excluded.dest_path,
@@ -49,8 +49,9 @@ func SaveState(url string, destPath string, state *types.DownloadState) error {
 				total_size=excluded.total_size,
 				downloaded=excluded.downloaded,
 				url_hash=excluded.url_hash,
-				paused_at=excluded.paused_at
-		`, state.ID, state.URL, state.DestPath, state.Filename, "paused", state.TotalSize, state.Downloaded, state.URLHash, state.CreatedAt, state.PausedAt)
+				paused_at=excluded.paused_at,
+				time_taken=excluded.time_taken
+		`, state.ID, state.URL, state.DestPath, state.Filename, "paused", state.TotalSize, state.Downloaded, state.URLHash, state.CreatedAt, state.PausedAt, state.Elapsed/1e6) // Convert ns to ms
 
 		if err != nil {
 			return fmt.Errorf("failed to upsert download: %w", err)
@@ -91,17 +92,18 @@ func LoadState(url string, destPath string) (*types.DownloadState, error) {
 	}
 
 	var state types.DownloadState
+	var timeTaken sql.NullInt64 // handle null
 	row := db.QueryRow(`
-		SELECT id, url, dest_path, filename, total_size, downloaded, url_hash, created_at, paused_at 
+		SELECT id, url, dest_path, filename, total_size, downloaded, url_hash, created_at, paused_at, time_taken
 		FROM downloads 
-		WHERE url = ? AND dest_path = ? AND status = 'paused'
+		WHERE url = ? AND dest_path = ?
 		ORDER BY paused_at DESC LIMIT 1
 	`, url, destPath)
 
 	err := row.Scan(
 		&state.ID, &state.URL, &state.DestPath, &state.Filename,
 		&state.TotalSize, &state.Downloaded, &state.URLHash,
-		&state.CreatedAt, &state.PausedAt,
+		&state.CreatedAt, &state.PausedAt, &timeTaken,
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -109,6 +111,10 @@ func LoadState(url string, destPath string) (*types.DownloadState, error) {
 			return nil, fmt.Errorf("state not found: %w", os.ErrNotExist) // mimic os.ErrNotExist for compatibility
 		}
 		return nil, fmt.Errorf("failed to query download: %w", err)
+	}
+
+	if timeTaken.Valid {
+		state.Elapsed = timeTaken.Int64 * 1e6 // Convert ms to ns
 	}
 
 	// Load tasks

@@ -397,6 +397,7 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		for _, d := range m.downloads {
 			if d.ID == msg.DownloadID {
 				d.paused = true
+				d.pausing = false // Transition complete
 				d.Downloaded = msg.Downloaded
 				d.Speed = 0 // Clear speed when paused
 				// Add log entry
@@ -723,6 +724,7 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							cmds = append(cmds, d.reporter.PollCmd())
 						} else {
 							m.Pool.Pause(d.ID)
+							d.pausing = true // Show immediate feedback
 						}
 					}
 				}

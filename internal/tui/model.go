@@ -64,9 +64,10 @@ type DownloadModel struct {
 	state    *types.ProgressState
 	reporter *ProgressReporter
 
-	done   bool
-	err    error
-	paused bool
+	done    bool
+	err     error
+	paused  bool
+	pausing bool // UI state: transitioning to pause
 }
 
 type RootModel struct {
@@ -218,6 +219,11 @@ func InitialRootModel(serverPort int, currentVersion string, pool *download.Work
 				// Set progress bar to correct position
 				if state.TotalSize > 0 {
 					dm.progress.SetPercent(float64(state.Downloaded) / float64(state.TotalSize))
+				}
+				// Restore total accumulated time
+				if state.Elapsed > 0 {
+					dm.Elapsed = time.Duration(state.Elapsed)
+					dm.StartTime = time.Now().Add(-dm.Elapsed)
 				}
 			}
 

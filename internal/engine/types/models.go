@@ -18,6 +18,7 @@ type DownloadState struct {
 	Filename   string `json:"filename"`
 	CreatedAt  int64  `json:"created_at"` // Unix timestamp
 	PausedAt   int64  `json:"paused_at"`  // Unix timestamp
+	Elapsed    int64  `json:"elapsed"`    // Elapsed time in nanoseconds
 }
 
 // DownloadEntry represents a download in the master list
