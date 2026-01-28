@@ -86,6 +86,10 @@ func (p *WorkerPool) Pause(downloadID string) {
 
 	// Set paused flag and cancel context
 	if ad.config.State != nil {
+		// Idempotency: If already pausing or paused, do nothing
+		if ad.config.State.IsPausing() || ad.config.State.IsPaused() {
+			return
+		}
 		ad.config.State.SetPausing(true) // Mark as transitioning to pause
 		ad.config.State.Pause()
 	}
