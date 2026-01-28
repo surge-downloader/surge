@@ -153,6 +153,11 @@ func (m RootModel) checkForDuplicate(url string) *DownloadModel {
 
 // startDownload initiates a new download
 func (m RootModel) startDownload(url, path, filename, id string) (RootModel, tea.Cmd) {
+	// Enforce absolute path
+	if absPath, err := filepath.Abs(path); err == nil {
+		path = absPath
+	}
+
 	// Generate unique filename to avoid overwriting
 	// Note: We do this check here because it applies to ALL new downloads
 	finalFilename := m.generateUniqueFilename(path, filename)

@@ -432,6 +432,11 @@ func handleDownload(w http.ResponseWriter, r *http.Request, defaultOutputDir str
 		}
 	}
 
+	// Enforce absolute path to ensure resume works even if CWD changes
+	if absPath, err := filepath.Abs(outPath); err == nil {
+		outPath = absPath
+	}
+
 	// Check settings for extension prompt and duplicates
 	// settings already loaded above
 	if true {
