@@ -16,14 +16,6 @@ import (
 	"github.com/surge-downloader/surge/internal/utils"
 )
 
-// Buffer pool to reduce GC pressure
-var bufPool = sync.Pool{
-	New: func() any {
-		buf := make([]byte, types.WorkerBuffer)
-		return &buf
-	},
-}
-
 // ConcurrentDownloader handles multi-connection downloads
 type ConcurrentDownloader struct {
 	ProgressChan chan<- any           // Channel for events (start/complete/error)
@@ -34,6 +26,7 @@ type ConcurrentDownloader struct {
 	URL          string // For pause/resume
 	DestPath     string // For pause/resume
 	Runtime      *types.RuntimeConfig
+	bufPool      sync.Pool
 }
 
 // NewConcurrentDownloader creates a new concurrent downloader with all required parameters
@@ -44,6 +37,14 @@ func NewConcurrentDownloader(id string, progressCh chan<- any, progState *types.
 		State:        progState,
 		activeTasks:  make(map[int]*ActiveTask),
 		Runtime:      runtime,
+		bufPool: sync.Pool{
+			New: func() any {
+				// Use configured buffer size
+				size := runtime.GetWorkerBufferSize()
+				buf := make([]byte, size)
+				return &buf
+			},
+		},
 	}
 }
 
