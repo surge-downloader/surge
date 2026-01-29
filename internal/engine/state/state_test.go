@@ -307,3 +307,226 @@ func TestDuplicateURLStateIsolation(t *testing.T) {
 		t.Errorf("State 3 DestPath = %s, want %s", loaded3.DestPath, dest3)
 	}
 }
+
+// =============================================================================
+// UpdateStatus Tests
+// =============================================================================
+
+func TestUpdateStatus(t *testing.T) {
+	tmpDir := setupTestDB(t)
+	defer os.RemoveAll(tmpDir)
+	defer CloseDB()
+
+	id := "test-status-id"
+	entry := types.DownloadEntry{
+		ID:       id,
+		URL:      "https://example.com/status-test.zip",
+		DestPath: filepath.Join(tmpDir, "status-test.zip"),
+		Filename: "status-test.zip",
+		Status:   "downloading",
+	}
+
+	if err := AddToMasterList(entry); err != nil {
+		t.Fatalf("AddToMasterList failed: %v", err)
+	}
+
+	// Update status to paused
+	if err := UpdateStatus(id, "paused"); err != nil {
+		t.Fatalf("UpdateStatus failed: %v", err)
+	}
+
+	// Verify
+	loaded, err := GetDownload(id)
+	if err != nil {
+		t.Fatalf("GetDownload failed: %v", err)
+	}
+	if loaded.Status != "paused" {
+		t.Errorf("Status = %s, want 'paused'", loaded.Status)
+	}
+}
+
+func TestUpdateStatus_NotFound(t *testing.T) {
+	tmpDir := setupTestDB(t)
+	defer os.RemoveAll(tmpDir)
+	defer CloseDB()
+
+	err := UpdateStatus("nonexistent-id", "paused")
+	if err == nil {
+		t.Error("UpdateStatus should fail for nonexistent ID")
+	}
+}
+
+// =============================================================================
+// PauseAllDownloads Tests
+// =============================================================================
+
+func TestPauseAllDownloads(t *testing.T) {
+	tmpDir := setupTestDB(t)
+	defer os.RemoveAll(tmpDir)
+	defer CloseDB()
+
+	// Add downloads with various statuses
+	entries := []types.DownloadEntry{
+		{ID: "dl-1", URL: "https://a.com/1", DestPath: "/tmp/1", Status: "downloading"},
+		{ID: "dl-2", URL: "https://a.com/2", DestPath: "/tmp/2", Status: "queued"},
+		{ID: "dl-3", URL: "https://a.com/3", DestPath: "/tmp/3", Status: "completed"},
+	}
+
+	for _, e := range entries {
+		if err := AddToMasterList(e); err != nil {
+			t.Fatalf("AddToMasterList failed: %v", err)
+		}
+	}
+
+	// Pause all
+	if err := PauseAllDownloads(); err != nil {
+		t.Fatalf("PauseAllDownloads failed: %v", err)
+	}
+
+	// Verify non-completed are paused
+	dl1, _ := GetDownload("dl-1")
+	dl2, _ := GetDownload("dl-2")
+	dl3, _ := GetDownload("dl-3")
+
+	if dl1.Status != "paused" {
+		t.Errorf("dl-1 status = %s, want 'paused'", dl1.Status)
+	}
+	if dl2.Status != "paused" {
+		t.Errorf("dl-2 status = %s, want 'paused'", dl2.Status)
+	}
+	if dl3.Status != "completed" {
+		t.Errorf("dl-3 status = %s, want 'completed' (should not change)", dl3.Status)
+	}
+}
+
+// =============================================================================
+// ResumeAllDownloads Tests
+// =============================================================================
+
+func TestResumeAllDownloads(t *testing.T) {
+	tmpDir := setupTestDB(t)
+	defer os.RemoveAll(tmpDir)
+	defer CloseDB()
+
+	// Add paused and other downloads
+	entries := []types.DownloadEntry{
+		{ID: "dl-1", URL: "https://b.com/1", DestPath: "/tmp/1", Status: "paused"},
+		{ID: "dl-2", URL: "https://b.com/2", DestPath: "/tmp/2", Status: "paused"},
+		{ID: "dl-3", URL: "https://b.com/3", DestPath: "/tmp/3", Status: "completed"},
+	}
+
+	for _, e := range entries {
+		if err := AddToMasterList(e); err != nil {
+			t.Fatalf("AddToMasterList failed: %v", err)
+		}
+	}
+
+	// Resume all
+	if err := ResumeAllDownloads(); err != nil {
+		t.Fatalf("ResumeAllDownloads failed: %v", err)
+	}
+
+	// Verify paused are now queued
+	dl1, _ := GetDownload("dl-1")
+	dl2, _ := GetDownload("dl-2")
+	dl3, _ := GetDownload("dl-3")
+
+	if dl1.Status != "queued" {
+		t.Errorf("dl-1 status = %s, want 'queued'", dl1.Status)
+	}
+	if dl2.Status != "queued" {
+		t.Errorf("dl-2 status = %s, want 'queued'", dl2.Status)
+	}
+	if dl3.Status != "completed" {
+		t.Errorf("dl-3 status = %s, want 'completed' (should not change)", dl3.Status)
+	}
+}
+
+// =============================================================================
+// ListAllDownloads Tests
+// =============================================================================
+
+func TestListAllDownloads(t *testing.T) {
+	tmpDir := setupTestDB(t)
+	defer os.RemoveAll(tmpDir)
+	defer CloseDB()
+
+	// Add downloads
+	entries := []types.DownloadEntry{
+		{ID: "list-1", URL: "https://c.com/1", DestPath: "/tmp/1", Status: "completed"},
+		{ID: "list-2", URL: "https://c.com/2", DestPath: "/tmp/2", Status: "paused"},
+	}
+
+	for _, e := range entries {
+		if err := AddToMasterList(e); err != nil {
+			t.Fatalf("AddToMasterList failed: %v", err)
+		}
+	}
+
+	// List all
+	downloads, err := ListAllDownloads()
+	if err != nil {
+		t.Fatalf("ListAllDownloads failed: %v", err)
+	}
+
+	if len(downloads) != 2 {
+		t.Errorf("ListAllDownloads returned %d items, want 2", len(downloads))
+	}
+}
+
+func TestListAllDownloads_Empty(t *testing.T) {
+	tmpDir := setupTestDB(t)
+	defer os.RemoveAll(tmpDir)
+	defer CloseDB()
+
+	downloads, err := ListAllDownloads()
+	if err != nil {
+		t.Fatalf("ListAllDownloads failed: %v", err)
+	}
+
+	if len(downloads) != 0 {
+		t.Errorf("ListAllDownloads returned %d items, want 0", len(downloads))
+	}
+}
+
+// =============================================================================
+// RemoveCompletedDownloads Tests
+// =============================================================================
+
+func TestRemoveCompletedDownloads(t *testing.T) {
+	tmpDir := setupTestDB(t)
+	defer os.RemoveAll(tmpDir)
+	defer CloseDB()
+
+	// Add downloads with various statuses
+	entries := []types.DownloadEntry{
+		{ID: "rm-1", URL: "https://d.com/1", DestPath: "/tmp/1", Status: "completed"},
+		{ID: "rm-2", URL: "https://d.com/2", DestPath: "/tmp/2", Status: "completed"},
+		{ID: "rm-3", URL: "https://d.com/3", DestPath: "/tmp/3", Status: "paused"},
+	}
+
+	for _, e := range entries {
+		if err := AddToMasterList(e); err != nil {
+			t.Fatalf("AddToMasterList failed: %v", err)
+		}
+	}
+
+	// Remove completed
+	count, err := RemoveCompletedDownloads()
+	if err != nil {
+		t.Fatalf("RemoveCompletedDownloads failed: %v", err)
+	}
+
+	if count != 2 {
+		t.Errorf("RemoveCompletedDownloads returned count = %d, want 2", count)
+	}
+
+	// Verify only paused remains
+	downloads, _ := ListAllDownloads()
+	if len(downloads) != 1 {
+		t.Errorf("Expected 1 download remaining, got %d", len(downloads))
+	}
+	if downloads[0].ID != "rm-3" {
+		t.Errorf("Remaining download ID = %s, want 'rm-3'", downloads[0].ID)
+	}
+}

@@ -906,3 +906,109 @@ func TestFindAvailablePort_HighPort(t *testing.T) {
 		t.Errorf("Expected port >= 60000, got %d", port)
 	}
 }
+
+// =============================================================================
+// pauseCmd Tests
+// =============================================================================
+
+func TestPauseCmd_Use(t *testing.T) {
+	if pauseCmd.Use != "pause <ID>" {
+		t.Errorf("Expected Use='pause <ID>', got %q", pauseCmd.Use)
+	}
+}
+
+func TestPauseCmd_Flags(t *testing.T) {
+	allFlag := pauseCmd.Flags().Lookup("all")
+	if allFlag == nil {
+		t.Error("Missing 'all' flag")
+	}
+}
+
+// =============================================================================
+// resumeCmd Tests
+// =============================================================================
+
+func TestResumeCmd_Use(t *testing.T) {
+	if resumeCmd.Use != "resume <ID>" {
+		t.Errorf("Expected Use='resume <ID>', got %q", resumeCmd.Use)
+	}
+}
+
+func TestResumeCmd_Flags(t *testing.T) {
+	allFlag := resumeCmd.Flags().Lookup("all")
+	if allFlag == nil {
+		t.Error("Missing 'all' flag")
+	}
+}
+
+// =============================================================================
+// rmCmd Tests
+// =============================================================================
+
+func TestRmCmd_Use(t *testing.T) {
+	if rmCmd.Use != "rm <ID>" {
+		t.Errorf("Expected Use='rm <ID>', got %q", rmCmd.Use)
+	}
+}
+
+func TestRmCmd_HasKillAlias(t *testing.T) {
+	found := false
+	for _, alias := range rmCmd.Aliases {
+		if alias == "kill" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("rmCmd should have 'kill' alias")
+	}
+}
+
+func TestRmCmd_Flags(t *testing.T) {
+	cleanFlag := rmCmd.Flags().Lookup("clean")
+	if cleanFlag == nil {
+		t.Error("Missing 'clean' flag")
+	}
+}
+
+// =============================================================================
+// lsCmd Tests
+// =============================================================================
+
+func TestLsCmd_Use(t *testing.T) {
+	if lsCmd.Use != "ls" {
+		t.Errorf("Expected Use='ls', got %q", lsCmd.Use)
+	}
+}
+
+func TestLsCmd_Flags(t *testing.T) {
+	jsonFlag := lsCmd.Flags().Lookup("json")
+	if jsonFlag == nil {
+		t.Error("Missing 'json' flag")
+	}
+
+	watchFlag := lsCmd.Flags().Lookup("watch")
+	if watchFlag == nil {
+		t.Error("Missing 'watch' flag")
+	}
+}
+
+// =============================================================================
+// serverCmd Tests
+// =============================================================================
+
+func TestServerCmd_HasSubcommands(t *testing.T) {
+	subcommands := map[string]bool{"start": false, "stop": false, "status": false}
+
+	for _, cmd := range serverCmd.Commands() {
+		if _, ok := subcommands[cmd.Name()]; ok {
+			subcommands[cmd.Name()] = true
+		}
+	}
+
+	for name, found := range subcommands {
+		if !found {
+			t.Errorf("Missing '%s' subcommand in serverCmd", name)
+		}
+	}
+}
