@@ -87,8 +87,14 @@ async function isInterceptEnabled() {
 }
 
 
-// Check if download is fresh (custom heuristic: < 60 seconds old)
+
+// Check if download is fresh (custom heuristic: < 60 seconds old AND in_progress)
 function isFreshDownload(downloadItem) {
+    // Filter out completed or interrupted downloads (history items)
+    if (downloadItem.state && downloadItem.state !== "in_progress") {
+        return false;
+    }
+
     if (!downloadItem.startTime) return true; // unexpected, assume fresh
 
     const startTime = new Date(downloadItem.startTime).getTime();
@@ -115,7 +121,7 @@ chrome.downloads.onCreated.addListener(async (downloadItem) => {
 
     // Filter historical downloads
     if (!isFreshDownload(downloadItem)) {
-        console.log("[Surge] Ignoring historical download (older than 60s)");
+        console.log("[Surge] Ignoring historical download");
         return;
     }
 
