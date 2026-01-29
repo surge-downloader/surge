@@ -614,13 +614,8 @@ func handleDownload(w http.ResponseWriter, r *http.Request, defaultOutputDir str
 	// Add to pool
 	GlobalPool.Add(cfg)
 
-	// Increment active downloads counter (optional, we might rely on pool now)
+	// Increment active downloads counter
 	atomic.AddInt32(&activeDownloads, 1)
-
-	// In Headless mode, we log to stdout via the progress channel listener
-	if serverProgram == nil {
-		fmt.Printf("Starting download: %s -> %s (ID: %s)\n", req.URL, outPath, downloadID)
-	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{
@@ -694,10 +689,6 @@ func processDownloads(urls []string, outputDir string, port int) {
 
 		GlobalPool.Add(cfg)
 		atomic.AddInt32(&activeDownloads, 1)
-
-		if serverProgram == nil {
-			fmt.Printf("Queued download: %s\n", url)
-		}
 	}
 }
 
@@ -805,7 +796,7 @@ func resumePausedDownloads() {
 			Runtime:    runtimeConfig,
 		}
 
-		fmt.Printf("Auto-resuming download: %s\n", entry.Filename)
 		GlobalPool.Add(cfg)
+		atomic.AddInt32(&activeDownloads, 1)
 	}
 }
