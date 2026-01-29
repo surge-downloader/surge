@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"syscall"
+	"time"
 
 	"github.com/surge-downloader/surge/internal/config"
 	"github.com/surge-downloader/surge/internal/download"
@@ -68,19 +69,16 @@ var rootCmd = &cobra.Command{
 
 		if !isMaster {
 			fmt.Fprintln(os.Stderr, "Error: Surge is already running.")
-			fmt.Fprintln(os.Stderr, "Use 'surge get <url>' to add a download to the active instance.")
+			fmt.Fprintln(os.Stderr, "Use 'surge add <url>' to add a download to the active instance.")
 			os.Exit(1)
 		}
 		defer ReleaseLock()
 
-		// Initialize Global Progress Channel
-		// GlobalProgressCh = make(chan tea.Msg, 100)
-
-		// Initialize Global Worker Pool
-		// GlobalPool = download.NewWorkerPool(GlobalProgressCh, 4)
-
-		isHeadless, _ := cmd.Flags().GetBool("headless")
+		isServer, _ := cmd.Flags().GetBool("server")
 		portFlag, _ := cmd.Flags().GetInt("port")
+		batchFile, _ := cmd.Flags().GetString("batch")
+		outputDir, _ := cmd.Flags().GetString("output")
+		exitWhenDone, _ := cmd.Flags().GetBool("exit-when-done")
 
 		var port int
 		var listener net.Listener
@@ -106,13 +104,33 @@ var rootCmd = &cobra.Command{
 		// Save port for browser extension AND CLI discovery
 		saveActivePort(port)
 
-		outputDir, _ := cmd.Flags().GetString("output")
-
 		// Start HTTP server in background (reuse the listener)
 		go startHTTPServer(listener, port, outputDir)
 
-		if isHeadless {
-			fmt.Printf("Surge %s running in headless mode.\n", Version)
+		// Queue initial downloads if any
+		go func() {
+			// Small delay to ensure server/pool is ready if needed,
+			// primarily prevents race if pool init is delayed, but here it's in PersistentPreRun
+
+			var urls []string
+			urls = append(urls, args...)
+
+			if batchFile != "" {
+				fileUrls, err := readURLsFromFile(batchFile)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "Error reading batch file: %v\n", err)
+				} else {
+					urls = append(urls, fileUrls...)
+				}
+			}
+
+			if len(urls) > 0 {
+				processDownloads(urls, outputDir, 0) // 0 port = internal direct add
+			}
+		}()
+
+		if isServer {
+			fmt.Printf("Surge %s running in server mode.\n", Version)
 			fmt.Printf("HTTP server listening on port %d\n", port)
 			fmt.Println("Press Ctrl+C to exit.")
 
@@ -120,6 +138,24 @@ var rootCmd = &cobra.Command{
 
 			// Auto resume downloads if enabled
 			resumePausedDownloads()
+
+			if exitWhenDone {
+				// Start a monitoring routine to exit when all downloads complete
+				go func() {
+					// Wait a bit for downloads to start
+					time.Sleep(2 * time.Second)
+					ticker := time.NewTicker(2 * time.Second)
+					defer ticker.Stop()
+					for range ticker.C {
+						if atomic.LoadInt32(&activeDownloads) == 0 {
+							if GlobalPool != nil && GlobalPool.ActiveCount() == 0 {
+								fmt.Println("All downloads finished. Exiting...")
+								os.Exit(0)
+							}
+						}
+					}
+				}()
+			}
 
 			// Block until signal
 			sigChan := make(chan os.Signal, 1)
@@ -505,6 +541,77 @@ func handleDownload(w http.ResponseWriter, r *http.Request, defaultOutputDir str
 	})
 }
 
+// processDownloads handles the logic of adding downloads either to local pool or remote server
+func processDownloads(urls []string, outputDir string, port int) {
+	// If port > 0, we are sending to a remote server
+	if port > 0 {
+		for _, url := range urls {
+			err := sendToServer(url, outputDir, port)
+			if err != nil {
+				fmt.Printf("Error adding %s: %v\n", url, err)
+			}
+		}
+		return
+	}
+
+	// Internal add (TUI or Headless mode)
+	if GlobalPool == nil {
+		fmt.Fprintln(os.Stderr, "Error: GlobalPool not initialized")
+		return
+	}
+
+	settings, err := config.LoadSettings()
+	if err != nil {
+		settings = config.DefaultSettings()
+	}
+
+	for _, url := range urls {
+		// Validation
+		if url == "" {
+			continue
+		}
+
+		// Prepare output path
+		outPath := outputDir
+		if outPath == "" {
+			if settings.General.DefaultDownloadDir != "" {
+				outPath = settings.General.DefaultDownloadDir
+				_ = os.MkdirAll(outPath, 0755)
+			} else {
+				outPath = "."
+			}
+		}
+		outPath = utils.EnsureAbsPath(outPath)
+
+		// Check for duplicates/extensions if we are in TUI mode (serverProgram != nil)
+		// For headless/root direct add, we might skip prompt or auto-approve?
+		// For now, let's just add directly if headless, or prompt if TUI is up.
+
+		downloadID := uuid.New().String()
+
+		// If TUI is up (serverProgram != nil), we might want to send a request msg?
+		// But processDownloads is called from QUEUE init routine, primarily for CLI args.
+		// If CLI args provided, user probably wants them added immediately.
+
+		cfg := types.DownloadConfig{
+			URL:        url,
+			OutputPath: outPath,
+			ID:         downloadID,
+			Verbose:    false,
+			ProgressCh: GlobalProgressCh,
+			State:      types.NewProgressState(downloadID, 0),
+			Runtime:    convertRuntimeConfig(settings.ToRuntimeConfig()),
+		}
+
+		GlobalPool.Add(cfg)
+		atomic.AddInt32(&activeDownloads, 1)
+
+		if serverProgram == nil {
+			fmt.Printf("Queued download: %s\n", url)
+		}
+	}
+}
+
 // Execute adds all child commands to the root command and sets flags appropriately.
 func Execute() {
 	if err := rootCmd.Execute(); err != nil {
@@ -513,10 +620,12 @@ func Execute() {
 }
 
 func init() {
-	rootCmd.AddCommand(getCmd)
-	rootCmd.Flags().Bool("headless", false, "Run in headless mode (no TUI)")
+	// rootCmd.AddCommand(getCmd) // Removed getCmd
+	rootCmd.Flags().Bool("server", false, "Run in server mode (headless)") // Replaces headless
+	rootCmd.Flags().Bool("exit-when-done", false, "Exit server when all downloads complete (server mode only)")
+	rootCmd.Flags().StringP("batch", "b", "", "File containing URLs to download (one per line)")
 	rootCmd.Flags().IntP("port", "p", 0, "Port to listen on (default: 8080 or first available)")
-	rootCmd.Flags().StringP("output", "o", "", "Default output directory (headless mode only)")
+	rootCmd.Flags().StringP("output", "o", "", "Default output directory")
 	rootCmd.SetVersionTemplate("Surge version {{.Version}}\n")
 }
 

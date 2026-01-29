@@ -74,6 +74,23 @@ func (p *WorkerPool) HasDownload(url string) bool {
 	return false
 }
 
+// ActiveCount returns the number of currently active (downloading/pausing) downloads
+func (p *WorkerPool) ActiveCount() int {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+
+	count := 0
+	for _, ad := range p.downloads {
+		// Count if not completed and not fully paused
+		if ad.config.State != nil && !ad.config.State.Done.Load() && !ad.config.State.IsPaused() {
+			count++
+		}
+	}
+	// Also count queued
+	count += len(p.queued)
+	return count
+}
+
 // Pause pauses a specific download by ID
 func (p *WorkerPool) Pause(downloadID string) {
 	p.mu.RLock()
