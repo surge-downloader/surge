@@ -15,14 +15,21 @@ import (
 )
 
 var lsCmd = &cobra.Command{
-	Use:   "ls",
+	Use:   "ls [id]",
 	Short: "List downloads",
-	Long:  `List all downloads from the running server or database.`,
+	Long:  `List all downloads from the running server or database. Optionally show details for a specific download by ID.`,
+	Args:  cobra.MaximumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		initializeGlobalState()
 
 		jsonOutput, _ := cmd.Flags().GetBool("json")
 		watch, _ := cmd.Flags().GetBool("watch")
+
+		// If ID provided, show details for that download
+		if len(args) == 1 {
+			showDownloadDetails(args[0], jsonOutput)
+			return
+		}
 
 		if watch {
 			for {
@@ -40,6 +47,7 @@ var lsCmd = &cobra.Command{
 // downloadInfo is a unified structure for display
 type downloadInfo struct {
 	ID         string  `json:"id"`
+	URL        string  `json:"url,omitempty"`
 	Filename   string  `json:"filename"`
 	Status     string  `json:"status"`
 	Progress   float64 `json:"progress"`
@@ -188,6 +196,88 @@ func formatSize(bytes int64) string {
 		exp++
 	}
 	return fmt.Sprintf("%.1f %cB", float64(bytes)/float64(div), "KMGTPE"[exp])
+}
+
+func showDownloadDetails(partialID string, jsonOutput bool) {
+	// Resolve partial ID
+	fullID, err := resolveDownloadID(partialID)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Try to get from running server first
+	port := readActivePort()
+	if port > 0 {
+		resp, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/download?id=%s", port, fullID))
+		if err == nil {
+			defer resp.Body.Close()
+			if resp.StatusCode == http.StatusOK {
+				var status types.DownloadStatus
+				if json.NewDecoder(resp.Body).Decode(&status) == nil {
+					printDownloadDetail(status, jsonOutput)
+					return
+				}
+			}
+		}
+	}
+
+	// Fall back to database - search through all downloads
+	downloads, err := state.ListAllDownloads()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error listing downloads: %v\n", err)
+		os.Exit(1)
+	}
+
+	var found *types.DownloadEntry
+	for _, d := range downloads {
+		if d.ID == fullID {
+			found = &d
+			break
+		}
+	}
+
+	if found == nil {
+		fmt.Fprintf(os.Stderr, "Error: download not found: %s\n", partialID)
+		os.Exit(1)
+	}
+
+	var progress float64
+	if found.TotalSize > 0 {
+		progress = float64(found.Downloaded) * 100 / float64(found.TotalSize)
+	}
+
+	status := types.DownloadStatus{
+		ID:         found.ID,
+		URL:        found.URL,
+		Filename:   found.Filename,
+		Status:     found.Status,
+		TotalSize:  found.TotalSize,
+		Downloaded: found.Downloaded,
+		Progress:   progress,
+	}
+	printDownloadDetail(status, jsonOutput)
+}
+
+func printDownloadDetail(d types.DownloadStatus, jsonOutput bool) {
+	if jsonOutput {
+		data, _ := json.MarshalIndent(d, "", "  ")
+		fmt.Println(string(data))
+		return
+	}
+
+	fmt.Printf("ID:         %s\n", d.ID)
+	fmt.Printf("URL:        %s\n", d.URL)
+	fmt.Printf("Filename:   %s\n", d.Filename)
+	fmt.Printf("Status:     %s\n", d.Status)
+	fmt.Printf("Progress:   %.1f%%\n", d.Progress)
+	fmt.Printf("Downloaded: %s / %s\n", formatSize(d.Downloaded), formatSize(d.TotalSize))
+	if d.Speed > 0 {
+		fmt.Printf("Speed:      %.1f MB/s\n", d.Speed)
+	}
+	if d.Error != "" {
+		fmt.Printf("Error:      %s\n", d.Error)
+	}
 }
 
 func init() {

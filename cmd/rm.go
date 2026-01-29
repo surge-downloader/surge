@@ -67,7 +67,7 @@ var rmCmd = &cobra.Command{
 				fmt.Fprintf(os.Stderr, "Error removing download: %v\n", err)
 				os.Exit(1)
 			}
-			fmt.Printf("Removed download %s\n", id[:8])
+			fmt.Printf("Removed download %s (offline mode)\n", id[:8])
 		}
 	},
 }

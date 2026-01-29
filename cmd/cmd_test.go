@@ -401,8 +401,8 @@ func TestRootCmd_HasSubcommands(t *testing.T) {
 }
 
 func TestRootCmd_Use(t *testing.T) {
-	if rootCmd.Use != "surge" {
-		t.Errorf("Expected Use='surge', got %q", rootCmd.Use)
+	if rootCmd.Use != "surge [url]..." {
+		t.Errorf("Expected Use='surge [url]...', got %q", rootCmd.Use)
 	}
 }
 
@@ -976,8 +976,8 @@ func TestRmCmd_Flags(t *testing.T) {
 // =============================================================================
 
 func TestLsCmd_Use(t *testing.T) {
-	if lsCmd.Use != "ls" {
-		t.Errorf("Expected Use='ls', got %q", lsCmd.Use)
+	if lsCmd.Use != "ls [id]" {
+		t.Errorf("Expected Use='ls [id]', got %q", lsCmd.Use)
 	}
 }
 

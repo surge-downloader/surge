@@ -42,10 +42,11 @@ var (
 
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
-	Use:     "surge",
+	Use:     "surge [url]...",
 	Short:   "An open-source download manager written in Go",
 	Long:    `Surge is a blazing fast, open-source terminal (TUI) download manager built in Go.`,
 	Version: Version,
+	Args:    cobra.ArbitraryArgs,
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
 		// Initialize Global Progress Channel
 		GlobalProgressCh = make(chan any, 100)
@@ -184,13 +185,25 @@ func StartHeadlessConsumer() {
 		for msg := range GlobalProgressCh {
 			switch m := msg.(type) {
 			case events.DownloadStartedMsg:
-				fmt.Printf("Started: %s\n", m.Filename)
+				id := m.DownloadID
+				if len(id) > 8 {
+					id = id[:8]
+				}
+				fmt.Printf("Started: %s [%s]\n", m.Filename, id)
 			case events.DownloadCompleteMsg:
 				atomic.AddInt32(&activeDownloads, -1)
-				fmt.Printf("Completed: %s (in %s)\n", m.Filename, m.Elapsed)
+				id := m.DownloadID
+				if len(id) > 8 {
+					id = id[:8]
+				}
+				fmt.Printf("Completed: %s [%s] (in %s)\n", m.Filename, id, m.Elapsed)
 			case events.DownloadErrorMsg:
 				atomic.AddInt32(&activeDownloads, -1)
-				fmt.Printf("Error: %s\n", m.Err)
+				id := m.DownloadID
+				if len(id) > 8 {
+					id = id[:8]
+				}
+				fmt.Printf("Error [%s]: %s\n", id, m.Err)
 			}
 		}
 	}()
