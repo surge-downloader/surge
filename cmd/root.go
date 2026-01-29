@@ -280,6 +280,78 @@ func startHTTPServer(ln net.Listener, port int, defaultOutputDir string) {
 		}
 	})
 
+	// List endpoint - returns all downloads with current status
+	mux.HandleFunc("/list", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		var statuses []types.DownloadStatus
+
+		// Get active downloads from pool
+		if GlobalPool != nil {
+			activeConfigs := GlobalPool.GetAll()
+			for _, cfg := range activeConfigs {
+				status := types.DownloadStatus{
+					ID:       cfg.ID,
+					URL:      cfg.URL,
+					Filename: cfg.Filename,
+					Status:   "downloading",
+				}
+
+				if cfg.State != nil {
+					status.TotalSize = cfg.State.TotalSize
+					status.Downloaded = cfg.State.Downloaded.Load()
+					if status.TotalSize > 0 {
+						status.Progress = float64(status.Downloaded) * 100 / float64(status.TotalSize)
+					}
+
+					// Calculate speed from progress
+					downloaded, _, _, sessionElapsed, _, sessionStart := cfg.State.GetProgress()
+					sessionDownloaded := downloaded - sessionStart
+					if sessionElapsed.Seconds() > 0 && sessionDownloaded > 0 {
+						status.Speed = float64(sessionDownloaded) / sessionElapsed.Seconds() / (1024 * 1024)
+					}
+
+					// Update status based on state
+					if cfg.State.IsPaused() {
+						status.Status = "paused"
+					} else if cfg.State.Done.Load() {
+						status.Status = "completed"
+					}
+				}
+
+				statuses = append(statuses, status)
+			}
+		}
+
+		// If no active downloads, get from database
+		if len(statuses) == 0 {
+			dbDownloads, err := state.ListAllDownloads()
+			if err == nil {
+				for _, d := range dbDownloads {
+					var progress float64
+					if d.TotalSize > 0 {
+						progress = float64(d.Downloaded) * 100 / float64(d.TotalSize)
+					}
+					statuses = append(statuses, types.DownloadStatus{
+						ID:         d.ID,
+						URL:        d.URL,
+						Filename:   d.Filename,
+						Status:     d.Status,
+						TotalSize:  d.TotalSize,
+						Downloaded: d.Downloaded,
+						Progress:   progress,
+					})
+				}
+			}
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(statuses)
+	})
+
 	server := &http.Server{Handler: corsMiddleware(mux)}
 	if err := server.Serve(ln); err != nil && err != http.ErrServerClosed {
 		utils.Debug("HTTP server error: %v", err)

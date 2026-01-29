@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/surge-downloader/surge/internal/config"
+	"github.com/surge-downloader/surge/internal/engine/state"
 )
 
 // readActivePort reads the port from the port file
@@ -81,4 +82,35 @@ func sendToServer(url, outPath string, port int) error {
 	}
 
 	return nil
+}
+
+// resolveDownloadID resolves a partial ID (prefix) to a full download ID.
+// If the input is at least 8 characters and matches a single download, returns the full ID.
+// Returns the original ID if no match found or if it's already a full ID.
+func resolveDownloadID(partialID string) (string, error) {
+	if len(partialID) >= 32 {
+		return partialID, nil // Already a full UUID
+	}
+
+	// Get all downloads from database
+	downloads, err := state.ListAllDownloads()
+	if err != nil {
+		return partialID, nil // Fall through to use as-is
+	}
+
+	var matches []string
+	for _, d := range downloads {
+		if strings.HasPrefix(d.ID, partialID) {
+			matches = append(matches, d.ID)
+		}
+	}
+
+	if len(matches) == 1 {
+		return matches[0], nil
+	}
+	if len(matches) > 1 {
+		return "", fmt.Errorf("ambiguous ID prefix '%s' matches %d downloads", partialID, len(matches))
+	}
+
+	return partialID, nil // No match, use as-is (will fail with "not found" later)
 }

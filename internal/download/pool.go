@@ -91,6 +91,21 @@ func (p *WorkerPool) ActiveCount() int {
 	return count
 }
 
+// GetAll returns all active download configs (for listing)
+func (p *WorkerPool) GetAll() []types.DownloadConfig {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+
+	var configs []types.DownloadConfig
+	for _, ad := range p.downloads {
+		configs = append(configs, ad.config)
+	}
+	for _, cfg := range p.queued {
+		configs = append(configs, cfg)
+	}
+	return configs
+}
+
 // Pause pauses a specific download by ID
 func (p *WorkerPool) Pause(downloadID string) {
 	p.mu.RLock()
