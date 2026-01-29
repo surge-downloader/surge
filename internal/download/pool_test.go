@@ -142,7 +142,7 @@ func TestWorkerPool_Pause_ActiveDownload(t *testing.T) {
 	case msg := <-ch:
 		pausedMsg, ok := msg.(events.DownloadPausedMsg)
 		if !ok {
-			t.Errorf("Expected DownloadPausedMsg, got %T", msg)
+			t.Errorf("Expected DownloadPausedMsg, got %T: %+v", msg, msg)
 		}
 		if pausedMsg.DownloadID != "test-id" {
 			t.Errorf("Expected download ID 'test-id', got '%s'", pausedMsg.DownloadID)
@@ -177,7 +177,7 @@ func TestWorkerPool_Pause_NilState(t *testing.T) {
 	case msg := <-ch:
 		pausedMsg, ok := msg.(events.DownloadPausedMsg)
 		if !ok {
-			t.Errorf("Expected DownloadPausedMsg, got %T", msg)
+			t.Errorf("Expected DownloadPausedMsg, got %T: %+v", msg, msg)
 		}
 		if pausedMsg.Downloaded != 0 {
 			t.Errorf("Expected Downloaded=0 for nil state, got %d", pausedMsg.Downloaded)
@@ -357,6 +357,16 @@ func TestWorkerPool_Cancel_RemovesFromMap(t *testing.T) {
 
 	pool.Cancel("test-id")
 
+	// Consume removal message
+	select {
+	case msg := <-ch:
+		if _, ok := msg.(events.DownloadRemovedMsg); !ok {
+			t.Errorf("Expected DownloadRemovedMsg, got %T", msg)
+		}
+	case <-time.After(100 * time.Millisecond):
+		t.Error("Expected removal message")
+	}
+
 	pool.mu.RLock()
 	_, exists := pool.downloads["test-id"]
 	pool.mu.RUnlock()
@@ -385,6 +395,14 @@ func TestWorkerPool_Cancel_CallsCancelFunc(t *testing.T) {
 
 	pool.Cancel("test-id")
 
+	// Consume removal message
+	select {
+	case <-ch:
+		// OK
+	case <-time.After(100 * time.Millisecond):
+		t.Error("Expected removal message")
+	}
+
 	// Context should be canceled
 	select {
 	case <-ctx.Done():
@@ -410,6 +428,14 @@ func TestWorkerPool_Cancel_MarksDone(t *testing.T) {
 	pool.mu.Unlock()
 
 	pool.Cancel("test-id")
+
+	// Consume removal message
+	select {
+	case <-ch:
+		// OK
+	case <-time.After(100 * time.Millisecond):
+		t.Error("Expected removal message")
+	}
 
 	if !state.Done.Load() {
 		t.Error("Expected state.Done to be true after cancel")
@@ -479,7 +505,7 @@ func TestWorkerPool_Resume_SendsResumedMessage(t *testing.T) {
 	case msg := <-ch:
 		resumedMsg, ok := msg.(events.DownloadResumedMsg)
 		if !ok {
-			t.Errorf("Expected DownloadResumedMsg, got %T", msg)
+			t.Errorf("Expected DownloadResumedMsg, got %T: %+v", msg, msg)
 		}
 		if resumedMsg.DownloadID != "test-id" {
 			t.Errorf("Expected download ID 'test-id', got '%s'", resumedMsg.DownloadID)
@@ -527,7 +553,7 @@ func TestWorkerPool_Resume_RequeuesDownload(t *testing.T) {
 				t.Errorf("Expected ID '%s', got '%s'", cfg.ID, resumedMsg.DownloadID)
 			}
 		} else {
-			t.Errorf("Expected DownloadResumedMsg, got %T", msg)
+			t.Errorf("Expected DownloadResumedMsg, got %T: %+v", msg, msg)
 		}
 	case <-time.After(100 * time.Millisecond):
 		t.Error("Expected resumed message to be sent")

@@ -199,6 +199,14 @@ func StartHeadlessConsumer() {
 					id = id[:8]
 				}
 				fmt.Printf("Error [%s]: %s\n", id, m.Err)
+			case events.DownloadQueuedMsg:
+				fmt.Printf("Queued: %s\n", m.Filename)
+			case events.DownloadPausedMsg:
+				fmt.Printf("Paused: %s\n", m.Filename)
+			case events.DownloadResumedMsg:
+				fmt.Printf("Resumed: %s\n", m.Filename)
+			case events.DownloadRemovedMsg:
+				fmt.Printf("Removed: %s\n", m.Filename)
 			}
 		}
 	}()

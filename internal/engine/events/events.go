@@ -42,11 +42,23 @@ type DownloadStartedMsg struct {
 
 type DownloadPausedMsg struct {
 	DownloadID string
+	Filename   string
 	Downloaded int64
 }
 
 type DownloadResumedMsg struct {
 	DownloadID string
+	Filename   string
+}
+
+type DownloadQueuedMsg struct {
+	DownloadID string
+	Filename   string
+}
+
+type DownloadRemovedMsg struct {
+	DownloadID string
+	Filename   string
 }
 
 // DownloadRequestMsg signals a request to start a download (e.g. from extension)

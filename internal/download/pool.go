@@ -49,6 +49,14 @@ func (p *WorkerPool) Add(cfg types.DownloadConfig) {
 	p.mu.Lock()
 	p.queued[cfg.ID] = cfg
 	p.mu.Unlock()
+
+	if p.progressCh != nil && !cfg.IsResume {
+		p.progressCh <- events.DownloadQueuedMsg{
+			DownloadID: cfg.ID,
+			Filename:   cfg.Filename,
+		}
+	}
+
 	p.taskChan <- cfg
 }
 
@@ -134,6 +142,7 @@ func (p *WorkerPool) Pause(downloadID string) {
 		}
 		p.progressCh <- events.DownloadPausedMsg{
 			DownloadID: downloadID,
+			Filename:   ad.config.Filename,
 			Downloaded: downloaded,
 		}
 	}
@@ -178,6 +187,14 @@ func (p *WorkerPool) Cancel(downloadID string) {
 	if ad.config.State != nil {
 		ad.config.State.Done.Store(true)
 	}
+
+	// Send removal message
+	if p.progressCh != nil {
+		p.progressCh <- events.DownloadRemovedMsg{
+			DownloadID: downloadID,
+			Filename:   ad.config.Filename,
+		}
+	}
 }
 
 // Resume resumes a paused download by ID
@@ -216,6 +233,7 @@ func (p *WorkerPool) Resume(downloadID string) {
 	if p.progressCh != nil {
 		p.progressCh <- events.DownloadResumedMsg{
 			DownloadID: downloadID,
+			Filename:   ad.config.Filename,
 		}
 	}
 }
