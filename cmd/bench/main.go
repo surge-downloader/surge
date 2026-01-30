@@ -11,11 +11,12 @@ import (
 	"time"
 
 	"github.com/surge-downloader/surge/internal/engine/concurrent"
+	"github.com/surge-downloader/surge/internal/engine/state"
 	"github.com/surge-downloader/surge/internal/engine/types"
 )
 
 const (
-	FileSize = 512 * 1024 * 1024 // 512 MB
+	FileSize = 2 * 1024 * 1024 * 1024 // 2 GB
 )
 
 func main() {
@@ -37,9 +38,7 @@ func main() {
 	}
 
 	progressCh := make(chan any, 100)
-	state := types.NewProgressState("bench-1", FileSize)
-
-	downloader := concurrent.NewConcurrentDownloader("bench-1", progressCh, state, runtime)
+	stateDesc := types.NewProgressState("bench-1", FileSize)
 
 	// 3. Output to /dev/shm to avoid disk IO bottleneck
 	// If /dev/shm not available, use temp dir
@@ -47,11 +46,19 @@ func main() {
 	if _, err := os.Stat(destDir); err != nil {
 		destDir = os.TempDir()
 	}
+
+	// Configure State DB
+	dbPath := filepath.Join(destDir, "surge-bench.db")
+	state.Configure(dbPath)
+
 	destPath := filepath.Join(destDir, "surge-bench.bin")
 
 	// Cleanup previous
 	os.Remove(destPath)
 	os.Remove(destPath + ".surge") // Incomplete suffix
+	os.Remove(dbPath)              // Cleanup DB
+
+	downloader := concurrent.NewConcurrentDownloader("bench-1", progressCh, stateDesc, runtime)
 
 	fmt.Printf("Downloading %d MB to %s...\n", FileSize/1024/1024, destPath)
 
@@ -71,6 +78,7 @@ func main() {
 
 	// Cleanup
 	os.Remove(destPath)
+	os.Remove(dbPath)
 }
 
 // ZeroReader implements io.ReadSeeker for zeros

@@ -157,6 +157,10 @@ func (d *ConcurrentDownloader) newConcurrentClient(numConns int) *http.Client {
 			Timeout:   types.DialTimeout,
 			KeepAlive: types.KeepAliveDuration,
 		}).DialContext,
+
+		// Tuning
+		ReadBufferSize:  256 * 1024, // 256KB
+		WriteBufferSize: 256 * 1024, // 256KB
 	}
 
 	return &http.Client{
