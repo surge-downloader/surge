@@ -191,7 +191,7 @@ func StartHeadlessConsumer() {
 				if len(id) > 8 {
 					id = id[:8]
 				}
-				fmt.Printf("Completed: %s [%s] (in %s)\n", m.Filename, id, m.Elapsed)
+				fmt.Printf("Completed: %s [%s] (in %.2fs)\n", m.Filename, id, m.Elapsed.Seconds())
 			case events.DownloadErrorMsg:
 				atomic.AddInt32(&activeDownloads, -1)
 				id := m.DownloadID

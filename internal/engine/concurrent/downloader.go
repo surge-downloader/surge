@@ -241,6 +241,12 @@ func (d *ConcurrentDownloader) Download(ctx context.Context, rawurl, destPath st
 	// Start time for stats
 	startTime := time.Now()
 
+	// CRITICAL: Reset the session start time in the shared state
+	// This ensures we measure time from actual execution start, not from when it was queued
+	if d.State != nil {
+		d.State.SyncSessionStart()
+	}
+
 	// Start balancer goroutine for dynamic chunk splitting
 	balancerCtx, cancelBalancer := context.WithCancel(downloadCtx)
 	defer cancelBalancer()
