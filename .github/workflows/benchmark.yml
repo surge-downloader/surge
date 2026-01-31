@@ -64,6 +64,20 @@ jobs:
           # Download Motrix config
           curl -L -o current/benchmark/aria2.conf https://raw.githubusercontent.com/agalwood/Motrix/master/extra/linux/x64/engine/aria2.conf
 
+      - name: Start Benchmark Server
+        run: |
+          cd current
+          go run ./cmd/bench_server/main.go &
+          # Wait for server to be ready
+          for i in {1..30}; do
+            if nc -z localhost 8080; then
+              echo "Server is up!"
+              break
+            fi
+            echo "Waiting for server..."
+            sleep 1
+          done
+
       - name: Run Benchmark
         id: benchmark
         run: |

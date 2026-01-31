@@ -28,7 +28,8 @@ EXE_SUFFIX = ".exe" if IS_WINDOWS else ""
 # CONFIGURATION
 # =============================================================================
 # Default test file URL (test file)
-TEST_URL = "https://sin-speed.hetzner.com/10GB.bin"
+# Default test file URL (test file)
+TEST_URL = "http://localhost:8080/10GB.bin"
 MB = 1024 * 1024
 
 # =============================================================================
@@ -97,6 +98,44 @@ def cleanup_file(path: Path):
     except Exception:
         pass
 
+
+
+# =============================================================================
+# HASH VERIFICATION
+# =============================================================================
+def get_expected_hash() -> str:
+    """Calculate SHA256 hash of 10GB of zeros efficiently."""
+    import hashlib
+    h = hashlib.sha256()
+    chunk = b'\0' * (1024 * 1024) # 1MB chunk
+    # 10GB = 10 * 1024 chunks
+    count = 10 * 1024
+    for _ in range(count):
+        h.update(chunk)
+    return h.hexdigest()
+
+EXPECTED_HASH_10GB = get_expected_hash()
+
+def verify_file_hash(path: Path) -> bool:
+    """Verify file matches expected hash."""
+    import hashlib
+    print(f"    Verifying hash for {path.name}...")
+    h = hashlib.sha256()
+    try:
+        with open(path, "rb") as f:
+            while chunk := f.read(4 * 1024 * 1024): # 4MB read buffer
+                h.update(chunk)
+        
+        actual = h.hexdigest()
+        if actual == EXPECTED_HASH_10GB:
+             print("    [OK] Hash match")
+             return True
+        else:
+             print(f"    [X] Hash MISMATCH! Expected {EXPECTED_HASH_10GB[:8]}... got {actual[:8]}...")
+             return False
+    except Exception as e:
+        print(f"    [X] Hash check failed: {e}")
+        return False
 
 # =============================================================================
 # SETUP FUNCTIONS
@@ -180,6 +219,11 @@ def benchmark_surge(executable: Path, url: str, output_dir: Path, label: str = "
     if not success:
         return BenchmarkResult(label, False, actual_time, file_size, output[:200])
     
+    # Verify Hash
+    downloaded_file = next((f for f in output_dir.glob("*.bin") if "surge" not in f.name), None)
+    if downloaded_file and not verify_file_hash(downloaded_file):
+        return BenchmarkResult(label, False, actual_time, file_size, "Hash Mismatch")
+
     return BenchmarkResult(label, True, actual_time, file_size)
 
 
@@ -211,6 +255,9 @@ def benchmark_aria2(url: str, output_dir: Path) -> BenchmarkResult:
     if not success:
         return BenchmarkResult("aria2c", False, elapsed, file_size, output[:200])
     
+    if not verify_file_hash(output_file):
+        return BenchmarkResult("aria2c", False, elapsed, file_size, "Hash Mismatch")
+
     return BenchmarkResult("aria2c", True, elapsed, file_size)
 
 
@@ -235,6 +282,9 @@ def benchmark_wget(url: str, output_dir: Path) -> BenchmarkResult:
     if not success:
         return BenchmarkResult("wget", False, elapsed, file_size, output[:200])
     
+    if not verify_file_hash(output_file):
+         return BenchmarkResult("wget", False, elapsed, file_size, "Hash Mismatch")
+
     return BenchmarkResult("wget", True, elapsed, file_size)
 
 
@@ -259,6 +309,9 @@ def benchmark_curl(url: str, output_dir: Path) -> BenchmarkResult:
     if not success:
         return BenchmarkResult("curl", False, elapsed, file_size, output[:200])
     
+    if not verify_file_hash(output_file):
+        return BenchmarkResult("curl", False, elapsed, file_size, "Hash Mismatch")
+
     return BenchmarkResult("curl", True, elapsed, file_size)
 
 
@@ -317,6 +370,9 @@ def benchmark_motrix(url: str, output_dir: Path) -> BenchmarkResult:
 
     if not success:
         return BenchmarkResult("motrix", False, elapsed, file_size, output[:200])
+    
+    if not verify_file_hash(output_file):
+        return BenchmarkResult("motrix", False, elapsed, file_size, "Hash Mismatch")
 
     return BenchmarkResult("motrix", True, elapsed, file_size)
 
@@ -642,6 +698,12 @@ def main():
         print_results(final_results)
 
         
+        # Validate Global Success (exit 1 if any failing)
+        any_failure = any(not r.success for r in final_results)
+        if any_failure:
+            print("BENCHMARK FAILED: One or more downloads failed or had hash mismatches.")
+            sys.exit(1)
+
     finally:
         # Cleanup
         print("Cleaning up temp directory...")
