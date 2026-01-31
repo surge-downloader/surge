@@ -83,7 +83,7 @@ jobs:
         run: |
           cd current
           # Run benchmark and capture output to both console and file
-          python3 benchmark.py --surge-exec ../surge-current --surge-baseline ../surge-baseline --motrix --aria2 --speedtest | tee benchmark_output.txt
+          python3 benchmark.py --surge-exec ../surge-current --surge-baseline ../surge-baseline --motrix --aria2 --speedtest -n 5 | tee benchmark_output.txt
 
           # Read file content into environment variable for next step (handling multiline)
           echo "BENCHMARK_RESULTS<<EOF" >> $GITHUB_ENV

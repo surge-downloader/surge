@@ -71,12 +71,12 @@ func limitMiddleware(next http.HandlerFunc) http.HandlerFunc {
 }
 
 func main() {
-	http.HandleFunc("/10GB.bin", limitMiddleware(func(w http.ResponseWriter, r *http.Request) {
-		const size = 10 * 1024 * 1024 * 1024 // 10GB
-		w.Header().Set("Content-Length", "10737418240")
+	http.HandleFunc("/2GB.bin", limitMiddleware(func(w http.ResponseWriter, r *http.Request) {
+		const size = 2 * 1024 * 1024 * 1024 // 2GB
+		w.Header().Set("Content-Length", "2147483648")
 		w.Header().Set("Content-Type", "application/octet-stream")
 
-		http.ServeContent(w, r, "10GB.bin", time.Now(), &ZeroReader{Size: size})
+		http.ServeContent(w, r, "2GB.bin", time.Now(), &ZeroReader{Size: size})
 	}))
 
 	log.Println("Benchmark server running on :8080 (Max 32 connections)...")

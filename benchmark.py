@@ -29,7 +29,7 @@ EXE_SUFFIX = ".exe" if IS_WINDOWS else ""
 # =============================================================================
 # Default test file URL (test file)
 # Default test file URL (test file)
-TEST_URL = "http://localhost:8080/10GB.bin"
+TEST_URL = "http://localhost:8080/2GB.bin"
 MB = 1024 * 1024
 
 # =============================================================================
@@ -104,17 +104,17 @@ def cleanup_file(path: Path):
 # HASH VERIFICATION
 # =============================================================================
 def get_expected_hash() -> str:
-    """Calculate SHA256 hash of 10GB of zeros efficiently."""
+    """Calculate SHA256 hash of 2GB of zeros efficiently."""
     import hashlib
     h = hashlib.sha256()
     chunk = b'\0' * (1024 * 1024) # 1MB chunk
-    # 10GB = 10 * 1024 chunks
-    count = 10 * 1024
+    # 2GB = 2 * 1024 chunks
+    count = 2 * 1024
     for _ in range(count):
         h.update(chunk)
     return h.hexdigest()
 
-EXPECTED_HASH_10GB = get_expected_hash()
+EXPECTED_HASH_2GB = get_expected_hash()
 
 def verify_file_hash(path: Path) -> bool:
     """Verify file matches expected hash."""
@@ -127,11 +127,11 @@ def verify_file_hash(path: Path) -> bool:
                 h.update(chunk)
         
         actual = h.hexdigest()
-        if actual == EXPECTED_HASH_10GB:
+        if actual == EXPECTED_HASH_2GB:
              print("    [OK] Hash match")
              return True
         else:
-             print(f"    [X] Hash MISMATCH! Expected {EXPECTED_HASH_10GB[:8]}... got {actual[:8]}...")
+             print(f"    [X] Hash MISMATCH! Expected {EXPECTED_HASH_2GB[:8]}... got {actual[:8]}...")
              return False
     except Exception as e:
         print(f"    [X] Hash check failed: {e}")
@@ -524,7 +524,13 @@ def main():
     print(f"  Project:  {project_dir}")
     
     # Create temp directory for downloads
-    temp_dir = Path(tempfile.mkdtemp(prefix="surge_bench_"))
+    # try using /dev/shm if available for RAM disk speed
+    base_tmp = None
+    if Path("/dev/shm").exists() and os.access("/dev/shm", os.W_OK):
+         base_tmp = "/dev/shm"
+         print("  Using /dev/shm for RAM disk (avoiding SSD bottleneck)")
+
+    temp_dir = Path(tempfile.mkdtemp(prefix="surge_bench_", dir=base_tmp))
     download_dir = temp_dir / "downloads"
     download_dir.mkdir(parents=True, exist_ok=True)
     
