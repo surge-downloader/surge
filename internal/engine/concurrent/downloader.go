@@ -219,6 +219,7 @@ func (d *ConcurrentDownloader) Download(ctx context.Context, rawurl, destPath st
 		// Robustness: ensure state counter starts at 0 for fresh download
 		if d.State != nil {
 			d.State.Downloaded.Store(0)
+			d.State.SyncSessionStart()
 		}
 	}
 	queue := NewTaskQueue()
