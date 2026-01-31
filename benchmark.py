@@ -211,17 +211,28 @@ def benchmark_surge(executable: Path, url: str, output_dir: Path, label: str = "
     # Find downloaded file (surge uses original filename)
     downloaded_files = list(output_dir.glob("*.bin")) + list(output_dir.glob("*MB*")) + list(output_dir.glob("*.zip"))
     file_size = 0
-    for f in downloaded_files:
-        if f.is_file() and "surge" not in f.name:
-            file_size = max(file_size, get_file_size(f))
-            cleanup_file(f)
+    target_file = None
     
+    # Identify the main file (largest or first valid)
+    valid_files = [f for f in downloaded_files if f.is_file() and "surge" not in f.name]
+    if valid_files:
+        target_file = valid_files[0] 
+        file_size = get_file_size(target_file)
+
     if not success:
+        if target_file and target_file.exists(): cleanup_file(target_file)
         return BenchmarkResult(label, False, actual_time, file_size, output[:200])
     
     # Verify Hash
-    downloaded_file = next((f for f in output_dir.glob("*.bin") if "surge" not in f.name), None)
-    if downloaded_file and not verify_file_hash(downloaded_file):
+    hash_ok = True
+    if target_file:
+         hash_ok = verify_file_hash(target_file)
+         cleanup_file(target_file)
+    else:
+         # File not found
+         return BenchmarkResult(label, False, actual_time, 0, "File not found")
+
+    if not hash_ok:
         return BenchmarkResult(label, False, actual_time, file_size, "Hash Mismatch")
 
     return BenchmarkResult(label, True, actual_time, file_size)
@@ -250,12 +261,15 @@ def benchmark_aria2(url: str, output_dir: Path) -> BenchmarkResult:
     elapsed = time.perf_counter() - start
     
     file_size = get_file_size(output_file)
-    cleanup_file(output_file)
     
     if not success:
+        cleanup_file(output_file)
         return BenchmarkResult("aria2c", False, elapsed, file_size, output[:200])
     
-    if not verify_file_hash(output_file):
+    hash_ok = verify_file_hash(output_file)
+    cleanup_file(output_file)
+
+    if not hash_ok:
         return BenchmarkResult("aria2c", False, elapsed, file_size, "Hash Mismatch")
 
     return BenchmarkResult("aria2c", True, elapsed, file_size)
@@ -277,12 +291,15 @@ def benchmark_wget(url: str, output_dir: Path) -> BenchmarkResult:
     elapsed = time.perf_counter() - start
     
     file_size = get_file_size(output_file)
-    cleanup_file(output_file)
     
     if not success:
+        cleanup_file(output_file)
         return BenchmarkResult("wget", False, elapsed, file_size, output[:200])
     
-    if not verify_file_hash(output_file):
+    hash_ok = verify_file_hash(output_file)
+    cleanup_file(output_file)
+
+    if not hash_ok:
          return BenchmarkResult("wget", False, elapsed, file_size, "Hash Mismatch")
 
     return BenchmarkResult("wget", True, elapsed, file_size)
@@ -304,12 +321,15 @@ def benchmark_curl(url: str, output_dir: Path) -> BenchmarkResult:
     elapsed = time.perf_counter() - start
     
     file_size = get_file_size(output_file)
-    cleanup_file(output_file)
     
     if not success:
+        cleanup_file(output_file)
         return BenchmarkResult("curl", False, elapsed, file_size, output[:200])
     
-    if not verify_file_hash(output_file):
+    hash_ok = verify_file_hash(output_file)
+    cleanup_file(output_file)
+
+    if not hash_ok:
         return BenchmarkResult("curl", False, elapsed, file_size, "Hash Mismatch")
 
     return BenchmarkResult("curl", True, elapsed, file_size)
@@ -362,16 +382,19 @@ def benchmark_motrix(url: str, output_dir: Path) -> BenchmarkResult:
     elapsed = time.perf_counter() - start
 
     file_size = get_file_size(output_file)
-    cleanup_file(output_file)
     
     # Only cleanup config if we created it
     if not custom_conf.exists():
         cleanup_file(config_path)
 
     if not success:
+        cleanup_file(output_file)
         return BenchmarkResult("motrix", False, elapsed, file_size, output[:200])
     
-    if not verify_file_hash(output_file):
+    hash_ok = verify_file_hash(output_file)
+    cleanup_file(output_file)
+
+    if not hash_ok:
         return BenchmarkResult("motrix", False, elapsed, file_size, "Hash Mismatch")
 
     return BenchmarkResult("motrix", True, elapsed, file_size)
