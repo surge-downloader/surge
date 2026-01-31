@@ -378,6 +378,7 @@ def benchmark_motrix(url: str, output_dir: Path) -> BenchmarkResult:
         "aria2c",
         f"--conf-path={config_path}",
         "--enable-rpc=false", 
+        "-x", "64", "-s", "64", # Use 16 connections/splits to ensure fair speed comparison
         "-o", output_file.name,
         "-d", str(output_dir),
         "--allow-overwrite=true", # Ensure we don't fail if file exists (though cleanup cleans it)
