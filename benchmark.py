@@ -31,6 +31,100 @@ EXE_SUFFIX = ".exe" if IS_WINDOWS else ""
 TEST_URL = "https://sin-speed.hetzner.com/1GB.bin"
 MB = 1024 * 1024
 
+MOTRIX_CONFIG = """
+###############################
+# Motrix Linux Aria2 config file
+#
+# @see https://aria2.github.io/manual/en/html/aria2c.html
+#
+###############################
+
+
+################ RPC ################
+# Enable JSON-RPC/XML-RPC server.
+enable-rpc=true
+# Add Access-Control-Allow-Origin header field with value * to the RPC response.
+rpc-allow-origin-all=true
+# Listen incoming JSON-RPC/XML-RPC requests on all network interfaces.
+rpc-listen-all=true
+
+
+################ File system ################
+# Save a control file(*.aria2) every SEC seconds.
+auto-save-interval=10
+# Enable disk cache.
+disk-cache=64M
+# Specify file allocation method.
+file-allocation=trunc
+# No file allocation is made for files whose size is smaller than SIZE
+no-file-allocation-limit=64M
+# Save error/unfinished downloads to a file specified by --save-session option every SEC seconds.
+save-session-interval=10
+
+
+################ Task ################
+# Exclude seed only downloads when counting concurrent active downloads
+bt-detach-seed-only=true
+# Verify the peer using certificates specified in --ca-certificate option.
+check-certificate=false
+# If aria2 receives "file not found" status from the remote HTTP/FTP servers NUM times
+# without getting a single byte, then force the download to fail.
+max-file-not-found=10
+# Set number of tries.
+max-tries=0
+# Set the seconds to wait between retries. When SEC > 0, aria2 will retry downloads when the HTTP server returns a 503 response.
+retry-wait=10
+# Set the connect timeout in seconds to establish connection to HTTP/FTP/proxy server. After the connection is established, this option makes no effect and --timeout option is used instead.
+connect-timeout=10
+# Set timeout in seconds.
+timeout=10
+# aria2 does not split less than 2*SIZE byte range.
+min-split-size=1M
+# Send Accept: deflate, gzip request header.
+http-accept-gzip=true
+# Retrieve timestamp of the remote file from the remote HTTP/FTP server and if it is available, apply it to the local file.
+remote-time=true
+# Set interval in seconds to output download progress summary. Setting 0 suppresses the output.
+summary-interval=0
+# Handle quoted string in Content-Disposition header as UTF-8 instead of ISO-8859-1, for example, the filename parameter, but not the extended version filename*.
+content-disposition-default-utf8=true
+
+
+################ BT Task ################
+# Enable Local Peer Discovery.
+bt-enable-lpd=true
+# Requires BitTorrent message payload encryption with arc4.
+# bt-force-encryption=true
+# If true is given, after hash check using --check-integrity option and file is complete, continue to seed file.
+bt-hash-check-seed=true
+# Specify the maximum number of peers per torrent.
+bt-max-peers=128
+# Try to download first and last pieces of each file first. This is useful for previewing files.
+bt-prioritize-piece=head
+# Removes the unselected files when download is completed in BitTorrent.
+bt-remove-unselected-file=true
+# Seed previously downloaded files without verifying piece hashes.
+bt-seed-unverified=false
+# Set the connect timeout in seconds to establish connection to tracker. After the connection is established, this option makes no effect and --bt-tracker-timeout option is used instead.
+bt-tracker-connect-timeout=10
+# Set timeout in seconds.
+bt-tracker-timeout=10
+# Set host and port as an entry point to IPv4 DHT network.
+dht-entry-point=dht.transmissionbt.com:6881
+# Set host and port as an entry point to IPv6 DHT network.
+dht-entry-point6=dht.transmissionbt.com:6881
+# Enable IPv4 DHT functionality. It also enables UDP tracker support.
+enable-dht=true
+# Enable IPv6 DHT functionality.
+enable-dht6=true
+# Enable Peer Exchange extension.
+enable-peer-exchange=true
+# Specify the string used during the bitorrent extended handshake for the peer's client version.
+peer-agent=Transmission/3.00
+# Specify the prefix of peer ID.
+peer-id-prefix=-TR3000-
+"""
+
 # =============================================================================
 # DATA CLASSES
 # =============================================================================
@@ -262,6 +356,70 @@ def benchmark_curl(url: str, output_dir: Path) -> BenchmarkResult:
     return BenchmarkResult("curl", True, elapsed, file_size)
 
 
+def benchmark_motrix(url: str, output_dir: Path) -> BenchmarkResult:
+    """Benchmark Motrix configuration (using aria2c)."""
+    
+    # Check for custom binary in benchmark/ directory
+    script_dir = Path(__file__).parent.resolve()
+    custom_bin = script_dir / "benchmark" / "aria2c"
+    
+    aria2_exec = "aria2c"
+    max_conns = 16 # System default limit
+    
+    if custom_bin.exists():
+        aria2_exec = str(custom_bin.resolve())
+        max_conns = 64 # Custom binary limit
+    elif not which("aria2c"):
+        return BenchmarkResult("motrix", False, 0, 0, "aria2c not installed")
+
+    # Check for custom config in benchmark/ directory
+    custom_conf = script_dir / "benchmark" / "aria2.conf"
+    
+    # Prepare config path
+    if custom_conf.exists():
+        config_path = custom_conf.resolve()
+    else:
+        # Fallback to internal config
+        config_path = output_dir / "motrix.conf"
+        try:
+            config_path.write_text(MOTRIX_CONFIG)
+        except Exception as e:
+            return BenchmarkResult("motrix", False, 0, 0, f"Failed to write config: {e}")
+
+    output_file = output_dir / "motrix_download"
+    cleanup_file(output_file)
+
+    # Motrix execution
+    # IMPORTANT: We MUST override enable-rpc to false to ensure exit.
+    cmd = [
+        aria2_exec,
+        f"--conf-path={config_path}",
+        "--enable-rpc=false", 
+        "-x", str(max_conns), "-s", str(max_conns), # Adjust connections based on binary capability
+        "-o", output_file.name,
+        "-d", str(output_dir),
+        "--allow-overwrite=true", 
+        "--console-log-level=warn",
+        url
+    ]
+
+    start = time.perf_counter()
+    success, output = run_command(cmd, timeout=600)
+    elapsed = time.perf_counter() - start
+
+    file_size = get_file_size(output_file)
+    cleanup_file(output_file)
+    
+    # Only cleanup config if we created it
+    if not custom_conf.exists():
+        cleanup_file(config_path)
+
+    if not success:
+        return BenchmarkResult("motrix", False, elapsed, file_size, output[:200])
+
+    return BenchmarkResult("motrix", True, elapsed, file_size)
+
+
 # =============================================================================
 # REPORTING
 # =============================================================================
@@ -361,6 +519,7 @@ def main():
     parser.add_argument("--aria2", action="store_true", help="Run aria2c benchmark")
     parser.add_argument("--wget", action="store_true", help="Run wget benchmark")
     parser.add_argument("--curl", action="store_true", help="Run curl benchmark")
+    parser.add_argument("--motrix", action="store_true", help="Run Motrix benchmark (aria2c + config)")
     
     # Executable flags
     parser.add_argument("--surge-exec", type=Path, help="Path to specific Surge executable to test")
@@ -375,7 +534,7 @@ def main():
     num_iterations = args.iterations
     
     # helper to check if any specific service was requested
-    specific_service_requested = any([args.surge, args.aria2, args.wget, args.curl, args.surge_exec, args.surge_baseline])
+    specific_service_requested = any([args.surge, args.aria2, args.wget, args.curl, args.motrix, args.surge_exec, args.surge_baseline])
     
     print(f"\n  Test URL:   {test_url}")
     print(f"  Iterations: {num_iterations}")
@@ -406,7 +565,7 @@ def main():
         run_all = not specific_service_requested
 
         # Initialize all to False
-        surge_ok, aria2_ok, wget_ok, curl_ok = False, False, False, False
+        surge_ok, aria2_ok, wget_ok, curl_ok, motrix_ok = False, False, False, False, False
         surge_exec = None
         surge_baseline_exec = None
         
@@ -442,6 +601,13 @@ def main():
         if run_all or args.aria2:
             aria2_ok = check_aria2c()
         
+        if run_all or args.motrix:
+             # Motrix uses aria2c, so check for it if we haven't already
+             if not aria2_ok: # Optimization: don't check twice if aria2 also selected
+                motrix_ok = check_aria2c()
+             else:
+                motrix_ok = True
+        
         # --- Other tools ---
         if run_all or args.wget:
             wget_ok = check_wget()
@@ -471,6 +637,10 @@ def main():
         # curl
         if curl_ok and (run_all or args.curl):
             tasks.append({"name": "curl", "func": benchmark_curl, "args": (test_url, download_dir)})
+
+        # Motrix
+        if motrix_ok and (run_all or args.motrix):
+            tasks.append({"name": "motrix", "func": benchmark_motrix, "args": (test_url, download_dir)})
 
         # Initialize results storage
         # Map: tool_name -> list of BenchmarkResult

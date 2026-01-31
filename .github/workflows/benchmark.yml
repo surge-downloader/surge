@@ -54,12 +54,22 @@ jobs:
           cd baseline
           go build -o ../surge-baseline .
 
+      - name: Download Motrix Assets
+        run: |
+          mkdir -p current/benchmark
+          # Download custom aria2c binary (supports >16 connections)
+          curl -L -o current/benchmark/aria2c https://raw.githubusercontent.com/agalwood/Motrix/master/extra/linux/x64/engine/aria2c
+          chmod +x current/benchmark/aria2c
+          
+          # Download Motrix config
+          curl -L -o current/benchmark/aria2.conf https://raw.githubusercontent.com/agalwood/Motrix/master/extra/linux/x64/engine/aria2.conf
+
       - name: Run Benchmark
         id: benchmark
         run: |
           cd current
           # Run benchmark and capture output to both console and file
-          python3 benchmark.py --surge-exec ../surge-current --surge-baseline ../surge-baseline --aria2 --speedtest -n 5 | tee benchmark_output.txt
+          python3 benchmark.py --surge-exec ../surge-current --motrix --aria2 --speedtest -n 5 | tee benchmark_output.txt
 
           # Read file content into environment variable for next step (handling multiline)
           echo "BENCHMARK_RESULTS<<EOF" >> $GITHUB_ENV
