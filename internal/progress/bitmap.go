@@ -294,6 +294,25 @@ func (b *BitmapTracker) RecalculateProgress(totalSize int64, remainingTasks []ty
 		}
 	}
 
+	// Restore-time ChunkCompleted bits mean the bytes are already on disk.
+	// Remaining coverage must not un-complete them before the status rewrite.
+	for i := 0; i < b.width; i++ {
+		if types.ChunkStatus(b.chunkStatus[i].Load()) != types.ChunkCompleted {
+			continue
+		}
+		chunkStart := int64(i) * b.actualChunkSize
+		chunkEnd := chunkStart + b.actualChunkSize
+		if chunkEnd > totalSize {
+			chunkEnd = totalSize
+		}
+		chunkSize := chunkEnd - chunkStart
+		current := b.chunkProgress[i].Load()
+		if current < chunkSize {
+			total += chunkSize - current
+			b.chunkProgress[i].Store(chunkSize)
+		}
+	}
+
 	for i := 0; i < b.width; i++ {
 		chunkStart := int64(i) * b.actualChunkSize
 		chunkEnd := chunkStart + b.actualChunkSize

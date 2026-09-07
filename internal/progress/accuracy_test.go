@@ -126,8 +126,12 @@ func TestRestoreBitmap_ShortBitmapRecoversWithoutPanic(t *testing.T) {
 
 	state.RecalculateProgress([]types.Task{{Offset: 0, Length: chunkSize}})
 
-	if got := state.GetChunkState(0); got != types.ChunkPending {
-		t.Fatalf("chunk 0 state after recalc = %v, want Pending", got)
+	if got := state.GetChunkState(0); got != types.ChunkCompleted {
+		t.Fatalf("chunk 0 state after recalc = %v, want Completed", got)
+	}
+	_, _, _, _, prog := state.GetBitmap()
+	if len(prog) == 0 || prog[0] != chunkSize {
+		t.Fatalf("chunk 0 progress after recalc = %v, want full %d", prog, chunkSize)
 	}
 	if got := state.GetChunkState(1); got != types.ChunkCompleted {
 		t.Fatalf("chunk 1 state after recalc = %v, want Completed", got)

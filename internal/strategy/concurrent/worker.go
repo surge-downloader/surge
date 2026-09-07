@@ -51,6 +51,13 @@ func (d *ConcurrentDownloader) worker(ctx context.Context, id int, mirrors []str
 			return nil
 		}
 
+		if d.State != nil && d.State.Bytes.VerifiedProgress.Load() >= totalSize {
+			if d.concurrencyGate != nil {
+				d.concurrencyGate.release()
+			}
+			return nil
+		}
+
 		if d.State != nil {
 			d.State.ActiveWorkers.Add(1)
 		}
@@ -66,6 +73,14 @@ func (d *ConcurrentDownloader) worker(ctx context.Context, id int, mirrors []str
 		activeTask.LastActivity.Store(now.UnixNano())
 
 		d.activeMu.Lock()
+		if d.State != nil && d.State.Bytes.VerifiedProgress.Load() >= totalSize {
+			d.activeMu.Unlock()
+			d.State.ActiveWorkers.Add(-1)
+			if d.concurrencyGate != nil {
+				d.concurrencyGate.release()
+			}
+			return nil
+		}
 		d.activeTasks[id] = activeTask
 		d.activeMu.Unlock()
 
@@ -160,6 +175,10 @@ func (d *ConcurrentDownloader) worker(ctx context.Context, id int, mirrors []str
 			}
 
 			if wasExternallyCancelled && lastErr != nil {
+				if d.completing.Load() {
+					lastErr = nil
+					break
+				}
 				currentMirrorIdx = (currentMirrorIdx + 1) % len(mirrors)
 				utils.Debug("Worker %d: Health check cancelled task, rotating from mirror %s to %s", id, mirrors[(currentMirrorIdx+len(mirrors)-1)%len(mirrors)], mirrors[currentMirrorIdx])
 
@@ -219,6 +238,13 @@ func (d *ConcurrentDownloader) worker(ctx context.Context, id int, mirrors []str
 				break
 			}
 
+			// Permanent HTTP (404/401/410/416): stop without burning
+			// GetMaxTaskRetries or the single-mirror backoff. 403 stays
+			// errSoftForbidden so confirmation-then-escalate still runs.
+			if types.IsPermanentHTTPError(lastErr) {
+				break
+			}
+
 			genericAttempt++
 			if genericAttempt >= maxRetries {
 				break
@@ -242,6 +268,10 @@ func (d *ConcurrentDownloader) worker(ctx context.Context, id int, mirrors []str
 		d.activeMu.Unlock()
 		if d.concurrencyGate != nil {
 			d.concurrencyGate.release()
+		}
+
+		if d.completing.Load() {
+			return nil
 		}
 
 		if throttledRequeue != nil {
@@ -454,11 +484,13 @@ func (d *ConcurrentDownloader) downloadTask(ctx context.Context, rawurl string, 
 
 			now := time.Now()
 			offset += int64(readSoFar)
-
 			newlyWritten := int64(readSoFar)
 
+			offset, newlyWritten = clampWriteToStopAt(offset, newlyWritten, activeTask.StopAt.Load())
 			activeTask.CurrentOffset.Store(offset)
 			activeTask.RangeMu.Unlock()
+
+			offset, newlyWritten = clampWriteToStopAt(offset, newlyWritten, activeTask.StopAt.Load())
 			activeTask.WindowBytes.Add(newlyWritten)
 			activeTask.LastActivity.Store(now.UnixNano())
 
@@ -502,6 +534,13 @@ func (d *ConcurrentDownloader) downloadTask(ctx context.Context, rawurl string, 
 		if readErr != nil {
 			return fmt.Errorf("read error: %w", readErr)
 		}
+	}
+
+	// Clean io.EOF with offset still short of StopAt is a truncated body,
+	// not success. UnexpectedEOF stays on the read-error path above.
+	stopAt := activeTask.StopAt.Load()
+	if offset < stopAt {
+		return fmt.Errorf("early EOF: read up to %d, expected %d", offset, stopAt)
 	}
 
 	return nil
@@ -571,12 +610,32 @@ func (d *ConcurrentDownloader) StealWork(queue *TaskQueue) bool {
 	return true
 }
 
+func clampWriteToStopAt(offset, newlyWritten, stopAt int64) (int64, int64) {
+	if offset > stopAt {
+		excess := offset - stopAt
+		offset = stopAt
+		if newlyWritten > excess {
+			newlyWritten -= excess
+		} else {
+			newlyWritten = 0
+		}
+	}
+	return offset, newlyWritten
+}
+
 func resumeOnRetryOffset(task *types.Task, activeTask *ActiveTask) {
 	current := activeTask.CurrentOffset.Load()
-	if current > task.Offset {
-		oldStart := task.Offset
-		task.Offset = current
-		task.Length = oldStart + task.Length - current
-		activeTask.Task = *task
+	origEnd := task.Offset + task.Length
+	stopAt := activeTask.StopAt.Load()
+	effectiveEnd := stopAt
+	if origEnd < effectiveEnd {
+		effectiveEnd = origEnd
 	}
+	length := effectiveEnd - current
+	if length < 0 {
+		length = 0
+	}
+	task.Offset = current
+	task.Length = length
+	activeTask.Task = *task
 }

@@ -133,6 +133,50 @@ func TestBitmapTracker_RecalculateProgress(t *testing.T) {
 	}
 }
 
+func TestBitmapTracker_RecalculateProgress_RestoredCompletedStaysFull(t *testing.T) {
+	bt := &BitmapTracker{}
+	totalSize := int64(1000)
+	chunkSize := int64(250)
+	bt.InitBitmap(totalSize, chunkSize)
+
+	// Restore marked chunk 1 complete; remaining still covers it and half of chunk 2.
+	bt.SetChunkState(1, types.ChunkCompleted)
+	tasks := []types.Task{
+		{Offset: 250, Length: 250}, // chunk 1 fully covered
+		{Offset: 500, Length: 125}, // chunk 2 half remaining
+	}
+
+	totalVerified := bt.RecalculateProgress(totalSize, tasks)
+	// full-minus-remaining would be 1000-375=625; restoring chunk 1 adds 250 → 875.
+	if totalVerified != 875 {
+		t.Errorf("expected totalVerified 875, got %d", totalVerified)
+	}
+
+	if bt.GetChunkState(0) != types.ChunkCompleted {
+		t.Errorf("chunk 0 should stay completed (no remaining)")
+	}
+	if bt.GetChunkState(1) != types.ChunkCompleted {
+		t.Errorf("chunk 1 restored Completed must stay Completed")
+	}
+	if bt.GetChunkState(2) != types.ChunkDownloading {
+		t.Errorf("chunk 2 partial must not be starved")
+	}
+	if bt.GetChunkState(3) != types.ChunkCompleted {
+		t.Errorf("chunk 3 should stay completed")
+	}
+
+	_, _, _, _, prog := bt.GetBitmapSnapshot(totalSize, true)
+	if len(prog) != 4 {
+		t.Fatalf("expected 4 chunk progress entries, got %d", len(prog))
+	}
+	if prog[1] != chunkSize {
+		t.Errorf("chunk 1 progress = %d, want full %d", prog[1], chunkSize)
+	}
+	if prog[2] != 125 {
+		t.Errorf("chunk 2 progress = %d, want 125 (partial not zeroed)", prog[2])
+	}
+}
+
 // =============================================================================
 // Benchmarks
 // =============================================================================

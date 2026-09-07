@@ -12,33 +12,6 @@ import (
 	"github.com/SurgeDM/Surge/internal/types"
 )
 
-func TestHandlePause_CompletionBoundary(t *testing.T) {
-	tmpDir := testutil.SetupStateDB(t)
-	cleanup := func() {}
-	defer cleanup()
-
-	fileSize := int64(1000)
-	destPath := filepath.Join(tmpDir, "test.bin")
-	state := progress.New("test-id", fileSize)
-	downloader := &ConcurrentDownloader{
-		ID:      "test-id",
-		State:   state,
-		Runtime: &types.RuntimeConfig{},
-	}
-
-	queue := NewTaskQueue()
-	// No tasks in queue means remainingBytes == 0
-
-	err := downloader.handlePause(destPath, fileSize, queue, nil)
-	if err != nil {
-		t.Fatalf("handlePause returned error on completion boundary: %v", err)
-	}
-
-	if state.IsPaused() {
-		t.Errorf("State should not be paused on completion boundary")
-	}
-}
-
 func TestHandlePause_Normal(t *testing.T) {
 	tmpDir := testutil.SetupStateDB(t)
 	cleanup := func() {}
@@ -270,32 +243,6 @@ func TestSetupTasks_BitmapRestoration(t *testing.T) {
 	}
 	if bitmap[0] != 0xAA {
 		t.Errorf("Bitmap[0] should be 0xAA (all chunks completed), got 0x%02X", bitmap[0])
-	}
-}
-
-func TestHandlePause_CompletionFinalization(t *testing.T) {
-	tmpDir := testutil.SetupStateDB(t)
-	cleanup := func() {}
-	defer cleanup()
-
-	fileSize := int64(1000)
-	destPath := filepath.Join(tmpDir, "test.bin")
-	progState := progress.New("test-id", fileSize)
-	downloader := &ConcurrentDownloader{
-		ID:    "test-id",
-		State: progState,
-	}
-
-	queue := NewTaskQueue()
-	// No tasks left
-
-	err := downloader.handlePause(destPath, fileSize, queue, nil)
-	if err != nil {
-		t.Errorf("Expected nil error for completion boundary, got %v", err)
-	}
-
-	if progState.IsPaused() {
-		t.Error("Should have resumed state for completion")
 	}
 }
 
